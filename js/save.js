@@ -7,7 +7,7 @@
 (function (H) {
   'use strict';
 
-  var VERSION = 2;
+  var VERSION = 3;   // v3: 他国 (外交) と交易路を追加
   var SLOTS = [
     { key: 'auto',  name: '自動保存', auto: true },
     { key: 'slot1', name: '巻の一' },
@@ -47,7 +47,9 @@
         yearText: game.state.yearText() + ' ' + game.state.seasonText(),
         savedAt: Date.now(),
         state: game.state.serialize(),
-        city: game.city.serialize()
+        city: game.city.serialize(),
+        nations: game.nations ? game.nations.serialize() : null,
+        trade: game.trade ? game.trade.serialize() : null
       };
       try {
         localStorage.setItem(Save._key(slot), JSON.stringify(data));

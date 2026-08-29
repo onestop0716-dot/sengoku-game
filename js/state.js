@@ -20,6 +20,9 @@
     this.era = 0;
     this.taxLevel = 2;        // H.TAXLV の添字 (0=薄税 .. 4=苛税)
     this.policies = {};       // 採用済み政策 {id: true}
+    this.nation = null;       // 選んだ国 (H.NATION_MAP のid)
+    this.fame = 30;           // 名声 (0〜150)。外交と会盟に影響
+    this.hegemon = false;     // 会盟を主催して覇者となったか
     this.log = [];
     this.listeners = [];
     this.totalBuilt = 0;
@@ -27,7 +30,7 @@
     this.ruined = false;
   }
 
-  /* ---------- 政策の合成効果 ---------- */
+  /* ---------- 政策の合成効果 (+ 国風 + 覇者) ---------- */
   State.prototype.policyFx = function () {
     var fx = { grainMul: 1, coinMul: 1, taxBonus: 0, workRatio: 0, morale: 0 };
     for (var id in this.policies) {
@@ -39,7 +42,38 @@
       if (p.workRatio) fx.workRatio += p.workRatio;
       if (p.morale) fx.morale += p.morale;
     }
+    /* 国風 (選んだ国の特色) */
+    var nb = H.NATION_MAP && H.NATION_MAP[this.nation];
+    if (nb && nb.bonus) {
+      if (nb.bonus.grainMul) fx.grainMul *= nb.bonus.grainMul;
+      if (nb.bonus.coinMul) fx.coinMul *= nb.bonus.coinMul;
+      if (nb.bonus.morale) fx.morale += nb.bonus.morale;
+    }
+    /* 覇者の威光 */
+    if (this.hegemon) fx.morale += 3;
     return fx;
+  };
+
+  /* ---------- 国風の適用 (国選択時に一度だけ) ---------- */
+  State.prototype.applyNation = function (id) {
+    this.nation = id;
+    var n = H.NATION_MAP[id];
+    if (!n || !n.bonus) return;
+    if (n.bonus.res) {
+      for (var k in n.bonus.res) {
+        this.res[k] = Math.max(0, (this.res[k] || 0) + n.bonus.res[k]);
+      }
+    }
+    if (n.bonus.fame) this.fame = H.clamp(this.fame + n.bonus.fame, 0, 150);
+  };
+
+  /* 政策の費用 (秦は変法の伝統で政策費が安い) */
+  State.prototype.policyCost = function (p) {
+    var nb = H.NATION_MAP && H.NATION_MAP[this.nation];
+    var mul = (nb && nb.bonus && nb.bonus.policyCostMul) || 1;
+    var out = {};
+    for (var k in p.cost) out[k] = Math.round(p.cost[k] * mul);
+    return out;
   };
 
   /* ---------- 政策の採用 ---------- */
@@ -53,8 +87,9 @@
         }
       }
     }
-    for (var k in p.cost) {
-      if ((this.res[k] || 0) < p.cost[k]) return { ok: false, why: '資源が足りない' };
+    var cost = this.policyCost(p);
+    for (var k in cost) {
+      if ((this.res[k] || 0) < cost[k]) return { ok: false, why: '資源が足りない' };
     }
     return { ok: true };
   };
@@ -64,7 +99,8 @@
     if (!p) return false;
     var chk = this.canAdopt(p);
     if (!chk.ok) { this.say(p.name + 'は採用できない — ' + chk.why, 'warn'); return false; }
-    for (var k in p.cost) this.res[k] -= p.cost[k];
+    var cost = this.policyCost(p);
+    for (var k in cost) this.res[k] -= cost[k];
     this.policies[id] = true;
     this.say('政策「' + p.name + '」を敷いた。' + p.effect, 'good');
     this.emit('policy', id);
@@ -350,7 +386,9 @@
       year: this.year, season: this.season, seasonT: this.seasonT,
       era: this.era, taxLevel: this.taxLevel,
       policies: Object.keys(this.policies),
-      unpaid: this.unpaid, totalBuilt: this.totalBuilt
+      unpaid: this.unpaid, totalBuilt: this.totalBuilt,
+      nation: this.nation, fame: Math.round(this.fame * 10) / 10,
+      hegemon: this.hegemon
     };
   };
 
@@ -363,6 +401,9 @@
     this.policies = {};
     (d.policies || []).forEach(function (id) { this.policies[id] = true; }, this);
     this.unpaid = !!d.unpaid; this.totalBuilt = d.totalBuilt || 0;
+    this.nation = d.nation || null;
+    this.fame = d.fame === undefined ? 30 : d.fame;
+    this.hegemon = !!d.hegemon;
   };
 
   H.State = State;

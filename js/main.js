@@ -105,14 +105,28 @@
     /* --- UI --- */
     H.UI.init(this);
 
-    /* --- 始まりの邑 --- */
-    this.foundCity();
-    H.UI.log('新たな都を築いた。まず田を開き、里を建てて民を集めよう', 'good');
-    H.UI.log(this.state.yearText() + ' — ' + H.ERAS[0].name + 'のはじまり');
-    H.UI.afterWorldChange();
+    /* --- 国選び → 始まりの邑 --- */
+    this.startNewRun();
 
     this.clock = new THREE.Clock();
     this.animate();
+  };
+
+  /* 国選択から新しい治世を始める (初回起動・新しい天地の共通処理) */
+  Game.startNewRun = function () {
+    var self = this;
+    this.state.speed = 0;                     // 選び終わるまで時は止まる
+    H.UI.openNationSelect(function (id) {
+      self.state.applyNation(id);
+      self.nations.setPlayer(id);
+      self.foundCity();
+      var n = H.NATION_MAP[id];
+      H.UI.afterWorldChange();
+      H.UI.setSpeed(1);
+      H.UI.log('あなたは【' + n.name + '】の君主となった。' + (n.bonus ? '国風: ' + n.bonus.text : ''), 'good');
+      H.UI.log('新たな都を築いた。まず田を開き、里を建てて民を集めよう', 'good');
+      H.UI.log(self.state.yearText() + ' — ' + H.ERAS[0].name + 'のはじまり。「外交」で諸侯の様子が見られる');
+    });
   };
 
   /* ---------------- 世界の構築 / 破棄 ---------------- */
@@ -138,13 +152,19 @@
     };
 
     this.state = new H.State(this.city);
+    this.nations = new H.Nations(this.state);
+    this.trade = new H.Trade(THREE, this.terrain, this.city, this.state, this.nations, this.scene);
     this.state.on(function (ev, data) {
       if (ev === 'log') H.UI.log(data.text, data.kind);
       if (ev === 'season') {
         H.UI.refreshAffordable();
         if (self.citizens) self.citizens.markDirty();
+        if (self.trade) self.trade.onSeason();
       }
-      if (ev === 'year') self.autosave();
+      if (ev === 'year') {
+        if (self.nations) self.nations.onYear();
+        self.autosave();
+      }
       if (ev === 'era') {
         H.UI.renderBuildList();
         H.UI.buildResourceBar();
@@ -265,6 +285,8 @@
       scene.remove(this.cityGroup);
     }
     if (this.citizens) { this.citizens.dispose(); this.citizens = null; }
+    if (this.trade) { this.trade.dispose(); this.trade = null; }
+    this.nations = null;
     this.terrainMesh = this.skirt = this.water = this.trees = this.cityGroup = null;
   };
 
@@ -328,6 +350,9 @@
     this.buildWorld(data.seed);
     this.city.deserialize(data.city);      // 開墾 + 建物の再配置
     this.state.deserialize(data.state);
+    this.nations.deserialize(data.nations);
+    this.nations.setPlayer(this.state.nation);
+    this.trade.deserialize(data.trade);
     this.buildTrees();                     // 開墾反映後に木を生やす
     this.citizens = new H.Citizens(THREE, this.terrain, this.city, this.state, this.scene);
     this.applyStyle();
@@ -349,9 +374,9 @@
   Game.newGame = function () {
     var seed = Math.floor(Math.random() * 100000) + 1;
     this.buildWorld(seed);
-    this.foundCity();
     H.UI.afterWorldChange();
     H.UI.log('新たな天地。ふたたび都を築くところから始まる', 'good');
+    this.startNewRun();
   };
 
   /* ---------------- 森を伐ったとき ---------------- */
@@ -517,6 +542,10 @@
       H.UI.log(def.name + 'は' + H.ERAS[def.era].name + 'にならないと建てられない', 'warn');
       return;
     }
+    if (def.nation && def.nation !== this.state.nation) {
+      H.UI.log(def.name + 'は' + H.NATION_MAP[def.nation].name + 'にしか築けない', 'warn');
+      return;
+    }
     var res = this.city.check(def, x, z);
     if (!res.ok) { H.UI.log(def.name + 'は建てられない — ' + res.why, 'warn'); return; }
     if (!this.state.canAfford(def)) {
@@ -629,10 +658,12 @@
     this.applySeasonLook();
 
     /* 住民 (一時停止で止まり、高速時も歩く速さは2倍まで) */
+    var mv = this.state.speed === 0 ? 0 : Math.min(this.state.speed, 2);
     if (this.citizens) {
-      var mv = this.state.speed === 0 ? 0 : Math.min(this.state.speed, 2);
       this.citizens.update(dt * mv, this.controls.radius, this.camera);
     }
+    /* 隊商 */
+    if (this.trade) this.trade.update(dt * mv);
 
     /* 影の焼き直し (建物が変わったときだけ) */
     if (this.needShadow) {

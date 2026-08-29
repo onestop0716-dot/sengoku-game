@@ -69,8 +69,9 @@
 
     $('info-close').onclick = function () { self.hideInfo(); };
 
-    /* モーダル (内政 / 書庫) */
+    /* モーダル (内政 / 外交 / 書庫) */
     $('btn-gov').onclick = function () { self.openGov(); };
+    $('btn-diplo').onclick = function () { self.openDiplo(); };
     $('btn-save').onclick = function () { self.openSave(); };
 
     /* 探訪モード */
@@ -144,8 +145,13 @@
   UI.renderBuildList = function () {
     var self = this, list = $('build-list');
     var era = this.game && this.game.state ? this.game.state.era : 0;
+    var nation = this.game && this.game.state ? this.game.state.nation : null;
     list.innerHTML = '';
-    H.BUILDINGS.filter(function (b) { return b.cat === self.cat; }).forEach(function (def) {
+    H.BUILDINGS.filter(function (b) {
+      if (b.cat !== self.cat) return false;
+      if (b.nation && b.nation !== nation) return false;   // 国限定の建物 (塩田など)
+      return true;
+    }).forEach(function (def) {
       var locked = def.era > era;
       var card = document.createElement('div');
       card.className = 'bcard' + (self.selected === def ? ' on' : '') + (locked ? ' eralock' : '');
@@ -283,6 +289,15 @@
     $('morale-val').textContent = Math.round(st.morale);
     $('security-bar').style.width = Math.round(st.security) + '%';
     $('security-val').textContent = Math.round(st.security);
+    $('fame-bar').style.width = H.clamp(Math.round(st.fame / 150 * 100), 0, 100) + '%';
+    $('fame-val').textContent = Math.round(st.fame);
+
+    /* 他国からの要求があれば、手が空いたときにダイアログで示す */
+    var na = this.game.nations;
+    if (na && na.demands.length && !this.game.walkMode &&
+        $('modal-overlay').classList.contains('hidden')) {
+      this.showDemand(na.demands[0]);
+    }
 
     $('year-text').textContent = st.yearText();
     $('season-text').textContent = st.seasonText();
@@ -433,15 +448,50 @@
   UI.hideTip = function () { $('tooltip').classList.add('hidden'); };
 
   /* ---------------- モーダル共通 ---------------- */
-  UI.openModal = function (title) {
+  UI.openModal = function (title, lock) {
+    this._modalLock = !!lock;
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = '';
+    $('modal-close').style.display = lock ? 'none' : '';
     $('modal-overlay').classList.remove('hidden');
     return $('modal-body');
   };
-  UI.closeModal = function () {
+  UI.closeModal = function (force) {
+    if (this._modalLock && !force) return;
+    this._modalLock = false;
     $('modal-overlay').classList.add('hidden');
     this._modal = null;
+  };
+
+  /* ---------------- 選択肢ダイアログ (他国からの要求など) ---------------- */
+  UI.showChoice = function (title, text, options) {
+    var self = this;
+    var body = this.openModal(title, true);   // 選ぶまで閉じられない
+    var html = '<div class="choice-text">' + text + '</div><div class="choice-btns">';
+    options.forEach(function (o, i) {
+      html += '<button data-i="' + i + '">' + o.label + '</button>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+    Array.prototype.forEach.call(body.querySelectorAll('button[data-i]'), function (btn) {
+      btn.onclick = function () {
+        self.closeModal(true);
+        var o = options[parseInt(btn.dataset.i, 10)];
+        if (o.fn) o.fn();
+      };
+    });
+  };
+
+  /* 他国からの要求をダイアログで処理する */
+  UI.showDemand = function (d) {
+    var self = this, na = this.game.nations;
+    var labels = d.kind === 'zhou'
+      ? ['納める (あわ' + d.su + ')', '断る']
+      : ['応じる (貨幣' + d.coin + ')', 'はねつける'];
+    this.showChoice(d.title, d.text, [
+      { label: labels[0], fn: function () { na.resolveDemand(d, true); } },
+      { label: labels[1], fn: function () { na.resolveDemand(d, false); } }
+    ]);
   };
 
   /* ---------------- 内政パネル ---------------- */
@@ -468,8 +518,9 @@
     H.POLICIES.forEach(function (p) {
       var adopted = !!st.policies[p.id];
       var chk = adopted ? { ok: false, why: '' } : st.canAdopt(p);
-      var cost = Object.keys(p.cost).map(function (k) {
-        return H.RESOURCES.filter(function (r) { return r.key === k; })[0].name + p.cost[k];
+      var pcost = st.policyCost(p);
+      var cost = Object.keys(pcost).map(function (k) {
+        return H.RESOURCES.filter(function (r) { return r.key === k; })[0].name + pcost[k];
       }).join(' ');
       html += '<div class="policy' + (adopted ? ' adopted' : '') + '">' +
         '<div class="p-head"><span class="p-name">' + p.name + '</span>' +
@@ -553,6 +604,176 @@
         if (st.adoptPolicy(btn.dataset.policy)) self.renderGov();
       };
     });
+  };
+
+  /* ---------------- 外交パネル ---------------- */
+  UI.openDiplo = function () {
+    this._modal = 'diplo';
+    this.renderDiplo();
+  };
+
+  UI.renderDiplo = function () {
+    var self = this, st = this.game.state;
+    var na = this.game.nations, tr = this.game.trade;
+    if (!na) return;
+    var body = this.openModal('外交 — 諸侯の天下');
+    var html = '';
+    var myNation = H.NATION_MAP[st.nation];
+    var myCur = H.CURRENCIES[H.playerCurrency(st)];
+
+    /* --- 自国と名声 --- */
+    html += '<div class="diplo-self">';
+    html += '<span class="d-my">' + (myNation ? myNation.name : '我が国') + '</span>';
+    html += '<span>名声 <b>' + Math.round(st.fame) + '</b></span>';
+    html += '<span>通貨: ' + myCur.name + '</span>';
+    if (st.hegemon) html += '<span class="d-hegemon">覇者</span>';
+    html += '</div>';
+    html += '<div class="d-note">名声は尊王・会盟・同盟で高まり、諸侯との関係の土台になる。</div>';
+
+    /* --- 周王室 --- */
+    var zhou = na.get('zhou');
+    if (zhou) {
+      var att0 = na.attitude(zhou);
+      html += '<h3>周王室</h3>';
+      html += '<div class="nation-row royal">' +
+        '<span class="n-chip" style="background:#' + zhou.def.color.toString(16).padStart(6, '0') + '"></span>' +
+        '<span class="n-name">周王室</span>' +
+        '<span class="n-att ' + att0.cls + '">' + att0.name + ' ' + Math.round(zhou.relation) + '</span>' +
+        '<span class="n-actions">' +
+        '<button data-act="revere">尊王の献上 (貨幣80)</button>' +
+        '<button data-act="meeting">会盟を主催</button>' +
+        '</span></div>';
+      var mchk = na.canHostMeeting();
+      html += '<div class="d-note">' + (st.hegemon
+        ? 'あなたは会盟の盟主 — 覇者である。'
+        : '会盟: 名声60 + 貨幣300 + あわ200 + 半数以上の国と中立以上 → 覇者となる' +
+          (mchk.ok ? ' <b>(開催できる)</b>' : ' (いまは開けない: ' + mchk.why + ')')) +
+        (st.era >= 3 ? ' — 戦国後期、王室の権威は形骸化しつつある。' : '') + '</div>';
+    }
+
+    /* --- 諸侯 --- */
+    html += '<h3>諸侯</h3>';
+    var pool = na.list.filter(function (n) { return !n.def.royal && !n.isPlayer; });
+    pool.sort(function (a, b) { return (b.alive - a.alive) || (b.power - a.power); });
+    pool.forEach(function (n) {
+      if (!n.alive && !n.annexedBy) return;   // まだ生まれていない国 (韓・魏・趙) は出さない
+      if (!n.alive) {
+        html += '<div class="nation-row dead">' +
+          '<span class="n-chip" style="background:#' + n.def.color.toString(16).padStart(6, '0') + '"></span>' +
+          '<span class="n-name">' + n.def.name + '</span>' +
+          '<span class="n-dead">滅亡 — ' + (n.annexedBy || '') +
+          (n.annexedBy === '三家分晋' ? '' : 'に併合された') + '</span></div>';
+        return;
+      }
+      var att = na.attitude(n);
+      var cur = H.CURRENCIES[n.def.currency];
+      var sameCur = n.def.currency === H.playerCurrency(st);
+      var badges = '';
+      if (n.allied) badges += '<i class="n-badge">同盟</i>';
+      if (n.married) badges += '<i class="n-badge">婚姻</i>';
+      if (n.tributary) badges += '<i class="n-badge">朝貢中</i>';
+      if (n.route) badges += '<i class="n-badge trade">交易</i>';
+
+      html += '<div class="nation-row" data-id="' + n.id + '">' +
+        '<div class="n-head">' +
+        '<span class="n-chip" style="background:#' + n.def.color.toString(16).padStart(6, '0') + '"></span>' +
+        '<span class="n-name">' + n.def.name + '</span>' + badges +
+        '<span class="n-att ' + att.cls + '">' + att.name + ' ' + Math.round(n.relation) + '</span>' +
+        '</div>' +
+        '<div class="n-info">国力 <i class="n-pow"><b style="width:' +
+          H.clamp(Math.round(n.power / 120 * 100), 2, 100) + '%"></b></i> ' + Math.round(n.power) +
+        ' / 特産: ' + n.def.special +
+        ' / 通貨: ' + cur.name + (sameCur ? ' (同じ通貨圏)' : ' (両替が要る)') + '</div>' +
+        '<div class="n-desc">' + n.def.desc + '</div>' +
+        '<div class="n-actions">' +
+        '<button data-act="gift">贈物 (貨幣' + na.giftCost(n) + ')</button>' +
+        (n.allied ? '' : '<button data-act="ally">同盟</button>') +
+        (n.married ? '' : '<button data-act="marry">婚姻</button>') +
+        (n.tributary ? '<button data-act="stoptribute">朝貢をやめる</button>'
+                     : '<button data-act="tribute">朝貢する</button>') +
+        (n.route ? '<button data-act="closeroute">交易路を閉じる</button>'
+                 : '<button data-act="openroute">交易路を開く (貨幣60)</button>') +
+        '</div>' +
+        (n.route && tr ? '<div class="n-trade">' + (tr.statusText(n) || '') +
+          ' / 帰還時のもうけの見込み: 貨幣' + tr._profit(n) + '</div>' : '') +
+        '</div>';
+    });
+
+    html += '<div class="d-note">交易路は市1つにつき1本まで。隊商は市から相手国の方角のマップ端へ実際に旅をする。' +
+            '関係が険悪以下の国とは交易できず、敵対まで落ちると交易路は閉ざされる。</div>';
+
+    body.innerHTML = html;
+
+    /* イベント */
+    function bind(row, n) {
+      Array.prototype.forEach.call(row.querySelectorAll('button[data-act]'), function (btn) {
+        btn.onclick = function () {
+          var act = btn.dataset.act, done = false;
+          if (act === 'gift') done = na.gift(n);
+          else if (act === 'ally') done = na.ally(n);
+          else if (act === 'marry') done = na.marry(n);
+          else if (act === 'tribute') done = na.tribute(n);
+          else if (act === 'stoptribute') done = na.stopTribute(n);
+          else if (act === 'openroute') done = tr && tr.openRoute(n);
+          else if (act === 'closeroute') done = tr && tr.closeRoute(n);
+          else if (act === 'revere') done = na.revere();
+          else if (act === 'meeting') done = na.hostMeeting();
+          if (done !== false) self.renderDiplo();
+        };
+      });
+    }
+    Array.prototype.forEach.call(body.querySelectorAll('.nation-row'), function (row) {
+      var id = row.dataset.id;
+      bind(row, id ? na.get(id) : na.get('zhou'));
+    });
+  };
+
+  /* ---------------- 国選択 (ゲーム開始時) ---------------- */
+  UI.openNationSelect = function (cb) {
+    var self = this;
+    var body = this.openModal('国選び — いずれの社稷を奉じるか', true);
+    var html = '<div class="d-note">紀元前770年、周は東遷し、諸侯の世が始まる。' +
+               'あなたはいずれかの国の君主として、天下統一を目指す。国ごとに国風 (特色) が異なる。</div>';
+
+    /* 前回の国史 (自動保存) があれば続きから読める */
+    var autoMeta = null;
+    try {
+      var rows = H.Save.list();
+      for (var i = 0; i < rows.length; i++) if (rows[i].auto && rows[i].meta) autoMeta = rows[i].meta;
+    } catch (e) {}
+    if (autoMeta) {
+      html += '<button id="continue-btn">前回の続きから — ' + autoMeta.yearText +
+              ' / 人口' + autoMeta.pop + ' (自動保存を読み込む)</button>';
+    }
+    html += '<div class="nation-grid">';
+    H.NATIONS.forEach(function (n) {
+      if (n.royal || n.later || !n.bonus) return;
+      var cur = H.CURRENCIES[n.currency];
+      html += '<div class="nation-card" data-id="' + n.id + '">' +
+        '<div class="nc-head"><span class="n-chip" style="background:#' +
+          n.color.toString(16).padStart(6, '0') + '"></span>' +
+        '<span class="nc-name">' + n.name + '</span>' +
+        '<span class="nc-cur">' + cur.name + '</span></div>' +
+        '<div class="nc-desc">' + n.desc + '</div>' +
+        '<div class="nc-bonus">' + n.bonus.text + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+
+    Array.prototype.forEach.call(body.querySelectorAll('.nation-card'), function (card) {
+      card.onclick = function () {
+        self.closeModal(true);
+        cb(card.dataset.id);
+      };
+    });
+    var cont = $('continue-btn');
+    if (cont) {
+      cont.onclick = function () {
+        self.closeModal(true);
+        if (!self.game.loadGame('auto')) self.openNationSelect(cb);   // 読めなければ選び直し
+      };
+    }
   };
 
   /* ---------------- 書庫 (セーブ / ロード) ---------------- */

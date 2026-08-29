@@ -221,6 +221,13 @@ window.HADO = window.HADO || {};
       need: { wood: 4 }, prod: { coin: 13 },
       desc: '日用の土器を焼く窯。器は市でよく売れる。'
     },
+    {
+      id: 'saltpan', name: '塩田', cat: 'prod', nation: 'qi',
+      cost: { wood: 20, coin: 30 }, upkeep: 0.8,
+      terrain: ['plain'], jobs: 4, needRiver: true,
+      prod: { coin: 15 }, season: [1.2, 1.5, 1.0, 0.4],
+      desc: '水を引き込み、日に干して塩を採る。斉だけが持つ富の源。塩は天下に売れる。'
+    },
 
     /* ===== 経済 ===== */
     {

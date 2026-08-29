@@ -299,3 +299,85 @@ body{
 ::-webkit-scrollbar{width:8px;}
 ::-webkit-scrollbar-track{background:rgba(0,0,0,.3);}
 ::-webkit-scrollbar-thumb{background:rgba(141,113,69,.5);}
+
+/* ===== Phase 3: 外交・貿易・国選択 ===== */
+.diplo-self{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:8px 10px;background:rgba(40,33,24,.7);border:1px solid rgba(141,113,69,.4);
+  font-size:13px;
+}
+.diplo-self .d-my{font-size:15px;color:var(--gold);}
+.d-hegemon{
+  padding:1px 8px;font-size:12px;color:#1a150e;background:var(--gold);
+  letter-spacing:.2em;
+}
+.d-note{font-size:11.5px;color:#bdae90;line-height:1.65;margin:6px 0;}
+
+.nation-row{
+  padding:8px 10px;margin:6px 0;
+  background:rgba(32,26,19,.75);border:1px solid rgba(141,113,69,.4);
+}
+.nation-row.royal{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.nation-row.dead{display:flex;align-items:center;gap:8px;opacity:.55;}
+.nation-row .n-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.n-chip{
+  display:inline-block;width:12px;height:12px;flex:0 0 12px;
+  border:1px solid rgba(0,0,0,.5);
+}
+.n-name{font-size:14.5px;color:var(--text);}
+.n-dead{font-size:12px;color:#9d8f78;}
+.n-att{margin-left:auto;font-size:12px;padding:1px 8px;border:1px solid transparent;}
+.att-bad{color:#e08070;border-color:rgba(209,97,79,.6);}
+.att-low{color:#cf9a70;border-color:rgba(190,130,80,.5);}
+.att-mid{color:#bdae90;border-color:rgba(141,113,69,.5);}
+.att-good{color:#9dc487;border-color:rgba(127,191,106,.5);}
+.att-best{color:#8ad0b4;border-color:rgba(111,158,138,.7);}
+.n-badge{
+  font-style:normal;font-size:10.5px;padding:0 6px;color:var(--jade);
+  border:1px solid rgba(111,158,138,.6);
+}
+.n-badge.trade{color:var(--gold);border-color:rgba(217,180,106,.5);}
+.n-info{font-size:11.5px;color:#bdae90;margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.n-pow{
+  display:inline-block;width:64px;height:7px;background:rgba(0,0,0,.5);
+  border:1px solid rgba(141,113,69,.5);vertical-align:middle;
+}
+.n-pow b{display:block;height:100%;background:linear-gradient(90deg,#8d7145,#d9b46a);}
+.n-desc{font-size:11px;color:#8d8066;line-height:1.6;margin-top:3px;}
+.n-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.n-actions button{
+  padding:3px 10px;font-family:inherit;font-size:11.5px;cursor:pointer;
+  color:var(--text);background:rgba(60,46,26,.92);border:1px solid rgba(141,113,69,.5);
+}
+.n-actions button:hover{border-color:var(--gold);color:var(--gold);}
+.n-trade{font-size:11.5px;color:var(--jade);margin-top:5px;}
+
+/* 選択肢ダイアログ */
+.choice-text{font-size:13.5px;line-height:1.9;color:var(--text);}
+.choice-btns{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+.choice-btns button{
+  flex:1;min-width:130px;padding:8px 14px;font-family:inherit;font-size:13px;cursor:pointer;
+  color:var(--text);background:rgba(60,46,26,.92);border:1px solid var(--line-2);
+}
+.choice-btns button:hover{border-color:var(--gold);color:var(--gold);}
+
+/* 国選択 */
+.nation-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:8px;
+}
+.nation-card{
+  padding:9px 11px;cursor:pointer;
+  background:rgba(32,26,19,.8);border:1px solid rgba(141,113,69,.45);
+  transition:border-color .12s, background .12s;
+}
+.nation-card:hover{border-color:var(--gold);background:rgba(48,39,26,.9);}
+.nation-card .nc-head{display:flex;align-items:center;gap:7px;}
+.nation-card .nc-name{font-size:16px;color:var(--gold);}
+.nation-card .nc-cur{margin-left:auto;font-size:10.5px;color:#8d8066;}
+.nation-card .nc-desc{font-size:11px;color:#bdae90;line-height:1.6;margin-top:4px;min-height:3.2em;}
+.nation-card .nc-bonus{font-size:11px;color:var(--jade);line-height:1.5;margin-top:4px;}
+#continue-btn{
+  width:100%;margin:2px 0 8px;padding:8px;font-family:inherit;font-size:13px;cursor:pointer;
+  color:var(--gold);background:rgba(48,39,26,.9);border:1px solid var(--line-2);
+}
+#continue-btn:hover{border-color:var(--gold);background:rgba(60,48,30,.95);}
