@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>覇道 — 春秋戦国都市建設</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <!-- ===== 上部: 資源バー ===== -->
+  <header id="topbar">
+    <div id="era-box">
+      <div id="era-name">春秋前期</div>
+      <div id="date-line"><span id="year-text">紀元前770年</span><span id="season-text">春</span></div>
+    </div>
+    <div id="res-bar"></div>
+    <div id="stat-box">
+      <div class="stat"><span class="stat-label">民心</span><div class="bar"><i id="morale-bar"></i></div><span id="morale-val">60</span></div>
+      <div class="stat"><span class="stat-label">治安</span><div class="bar"><i id="security-bar"></i></div><span id="security-val">50</span></div>
+    </div>
+  </header>
+
+  <!-- ===== 右: 情報パネル ===== -->
+  <aside id="infopanel" class="hidden">
+    <button id="info-close">×</button>
+    <h2 id="info-title">情報</h2>
+    <div id="info-body"></div>
+  </aside>
+
+  <!-- ===== 左下: ログ ===== -->
+  <div id="log"></div>
+
+  <!-- ===== 中央上: 操作ヒント ===== -->
+  <div id="hint">左ドラッグ:回転 / 右ドラッグ:移動 / ホイール:ズーム / R:視点リセット</div>
+
+  <!-- ===== 下部: 建設メニュー + 時間 ===== -->
+  <footer id="bottombar">
+    <div id="build-area">
+      <div id="cat-tabs"></div>
+      <div id="build-list"></div>
+    </div>
+    <div id="time-area">
+      <div id="menu-row">
+        <button class="menu-btn" id="btn-gov">内政</button>
+        <button class="menu-btn" id="btn-save">書庫</button>
+      </div>
+      <div id="tool-row">
+        <button class="tool" id="tool-select" data-tool="select">選択</button>
+        <button class="tool" id="tool-demolish" data-tool="demolish">撤去</button>
+        <button class="tool" id="btn-walk" title="街に降り立ち、民と同じ目線で歩く。民に近づくと E で話しかけられる">探訪</button>
+      </div>
+      <div id="speed-row">
+        <button class="spd" data-speed="0">‖</button>
+        <button class="spd" data-speed="1">▶</button>
+        <button class="spd" data-speed="2">▶▶</button>
+        <button class="spd" data-speed="4">▶▶▶</button>
+      </div>
+      <div id="season-progress"><i id="season-fill"></i></div>
+    </div>
+  </footer>
+
+  <!-- ===== モーダル (内政 / 書庫) ===== -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <button id="modal-close">×</button>
+      <h2 id="modal-title"></h2>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ===== 探訪モード: 会話 ===== -->
+  <div id="talk-prompt" class="hidden"></div>
+  <div id="dialog" class="hidden">
+    <div id="dialog-name"></div>
+    <div id="dialog-text"></div>
+    <div id="dialog-hint">E / クリックで閉じる</div>
+  </div>
+
+  <!-- ===== 建設ツールチップ ===== -->
+  <div id="tooltip" class="hidden"></div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/rng.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/meshes.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/city.js"></script>
+<script src="js/state.js"></script>
+<script src="js/agents.js"></script>
+<script src="js/avatar.js"></script>
+<script src="js/save.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
