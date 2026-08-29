@@ -430,6 +430,29 @@
     return cache.__mat;
   };
 
+  /* ---------- 傾斜地の基壇 ----------
+     建物は占有タイルの最高コーナーに載せるので、低い側には地面との
+     すき間ができる。そこを版築の台で埋めて、崖下まで届かせる。
+     drop = 最高コーナーと最低コーナーの高低差。ほぼ平地なら不要 (null)。 */
+  H.foundationMesh = function (THREE, size, tile, drop) {
+    if (drop <= 0.03) return null;
+    var w = size * tile * 0.94;
+    var fh = drop + 0.17;                    // 上端 rel -0.6 から最低コーナーの下まで
+    var key = '__found' + size + '_' + (Math.round(fh * 20) / 20);   // 高さを量子化して共有
+    if (!cache[key]) {
+      var g = new THREE.BoxGeometry(w, fh + 0.1, w);
+      g.translate(0, -0.6 - (fh + 0.1) / 2, 0);
+      cache[key] = g;
+    }
+    if (!cache.__foundMat) {
+      cache.__foundMat = new THREE.MeshLambertMaterial({ color: 0xb3a077 });   // 版築の土色
+    }
+    var m = new THREE.Mesh(cache[key], cache.__foundMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  };
+
   H.ghostMaterial = function (THREE, ok) {
     var key = ok ? '__gOk' : '__gNo';
     if (!cache[key]) {

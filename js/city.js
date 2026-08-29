@@ -91,20 +91,25 @@
       }
     }
 
-    /* 設置高さ = 占有タイルの最低コーナー */
-    var GC = this.G + 1, minH = Infinity;
+    /* 設置高さ = 占有タイルの最高コーナー (地面が建物を突き抜けないように)。
+       傾斜地では最低コーナーまでのすき間を版築の基壇で埋める */
+    var GC = this.G + 1, minH = Infinity, maxH = -Infinity;
     for (z = tz; z <= tz + s; z++) for (x = tx; x <= tx + s; x++) {
       minH = Math.min(minH, t.corner[x + z * GC]);
+      maxH = Math.max(maxH, t.corner[x + z * GC]);
     }
 
     var geo = H.buildingGeometry(THREE, def.id);
     var mesh = new THREE.Mesh(geo, H.buildingMaterial(THREE));
     var cx = t.worldX(tx) + (s - 1) * t.TILE / 2;
     var cz = t.worldZ(tz) + (s - 1) * t.TILE / 2;
-    mesh.position.set(cx, minH + 0.62, cz);
+    mesh.position.set(cx, maxH + 0.62, cz);
     mesh.rotation.y = rot * Math.PI / 2;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+
+    var pad = H.foundationMesh(THREE, s, t.TILE, maxH - minH);
+    if (pad) mesh.add(pad);   // 子にすると撤去時も一緒に消える。基壇は正方形なので回転しても崩れない
 
     var b = {
       uid: this.nextUid++,

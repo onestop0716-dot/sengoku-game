@@ -467,6 +467,7 @@
         }
       }
       if (!isFinite(minH)) minH = 0;
+      if (!isFinite(top)) top = 0;
 
       /* 城壁は隣とつながった形でプレビューする */
       if (def.id === 'wall') {
@@ -478,9 +479,10 @@
         this.ghost.rotation.y = this.buildRot * Math.PI / 2;
       }
       this.ghost.material = H.ghostMaterial(THREE, ok);
+      /* 建物は最高コーナーに載る (city.place と同じ) のでプレビューも合わせる */
       this.ghost.position.set(
         t.worldX(x) + (s - 1) * t.TILE / 2,
-        minH + 0.62,
+        top + 0.62,
         t.worldZ(z) + (s - 1) * t.TILE / 2
       );
       this.ghost.visible = true;
