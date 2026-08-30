@@ -16,6 +16,7 @@
     this.buildings = [];
     this.nextUid = 1;
     this.clearedTiles = [];   // 開墾した森のタイル添字 (セーブ用)
+    this.grade = 0;           // 教育水準による普請のグレード (0..2)
   }
 
   /* ---------- 建設可否の判定 ---------- */
@@ -99,7 +100,7 @@
       maxH = Math.max(maxH, t.corner[x + z * GC]);
     }
 
-    var geo = H.buildingGeometry(THREE, def.id);
+    var geo = H.buildingGeometry(THREE, def.id, this.grade);
     var mesh = new THREE.Mesh(geo, H.buildingMaterial(THREE));
     var cx = t.worldX(tx) + (s - 1) * t.TILE / 2;
     var cz = t.worldZ(tz) + (s - 1) * t.TILE / 2;
@@ -172,12 +173,28 @@
     var b = this.atTile(x, z);
     if (!b || b.id !== 'wall') return;
     var mask = this.wallMaskAt(x, z);
-    if (b.mask === mask) return;
+    if (b.mask === mask && b.mgrade === this.grade) return;
     b.mask = mask;
-    b.mesh.geometry = H.wallGeometry(this.THREE, mask);
+    b.mgrade = this.grade;
+    b.mesh.geometry = H.wallGeometry(this.THREE, mask, this.grade);
     /* 接続時は形が方向を持つので回転しない。孤立時はRキーの向きに戻す */
     b.mesh.rotation.y = mask ? 0 : (b.rot || 0) * Math.PI / 2;
     if (b.mesh.userData.outline) b.mesh.userData.outline.geometry = b.mesh.geometry;
+  };
+
+  /* ---------- 普請グレードの一括反映 (教育水準が閾値を越えたとき) ---------- */
+  City.prototype.setGrade = function (g) {
+    if (g === this.grade) return;
+    this.grade = g;
+    for (var i = 0; i < this.buildings.length; i++) {
+      var b = this.buildings[i];
+      if (b.id === 'wall') {
+        b.mgrade = undefined;                 // 強制的に作り直させる
+        this.refreshWallAt(b.tx, b.tz);
+      } else {
+        b.mesh.geometry = H.buildingGeometry(this.THREE, b.id, g);
+      }
+    }
   };
 
   /* 建物の周囲の城壁をまとめて作り直す (設置・撤去のあとに呼ぶ) */

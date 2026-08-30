@@ -23,6 +23,8 @@
     this.nation = null;       // 選んだ国 (H.NATION_MAP のid)
     this.fame = 30;           // 名声 (0〜150)。外交と会盟に影響
     this.hegemon = false;     // 会盟を主催して覇者となったか
+    this.edu = 8;             // 教育水準 (0〜100)。学問所などで上がり、普請の質が変わる
+    this._grade = 0;          // いまの普請グレード (0..2)
     this.log = [];
     this.listeners = [];
     this.totalBuilt = 0;
@@ -131,14 +133,27 @@
     for (k in B.BASE_STORE) s.store[k] = B.BASE_STORE[k];
     H.RESOURCES.forEach(function (r) { s.prod[r.key] = 0; s.need[r.key] = 0; });
 
+    var grade = this.buildingGrade();
+    s.grade = grade;
     for (i = 0; i < bs.length; i++) {
       var d = bs[i].def;
-      s.housing += d.housing; s.jobs += d.jobs; s.upkeep += d.upkeep;
+      /* 普請グレードで住居は少し広くなり、防衛建築は堅牢になる */
+      s.housing += d.housing +
+        (grade && d.id === 'house' ? grade : 0) +
+        (grade && d.id === 'ward' ? grade * 2 : 0);
+      s.jobs += d.jobs; s.upkeep += d.upkeep;
       s.taxBonus += d.taxBonus; s.moraleB += d.morale; s.securityB += d.security;
-      s.defense += d.defense;
+      s.defense += d.defense * (d.cat === 'def' ? 1 + 0.25 * grade : 1);
       s.count[d.id] = (s.count[d.id] || 0) + 1;
       if (d.store) for (k in d.store) s.store[k] = (s.store[k] || 0) + d.store[k];
     }
+
+    /* 教育: 学問所などが「みられる人数」と人口の比が目標値になる */
+    s.eduCover = (s.count.academy || 0) * B.EDU_ACADEMY +
+                 (s.count.office || 0) * B.EDU_OFFICE +
+                 (s.count.palace ? B.EDU_PALACE : 0);
+    s.eduTarget = H.clamp(80 * s.eduCover / Math.max(this.pop, 30) + this.era * 4 +
+                          (this.policies.henfa ? 6 : 0), 0, 100);
 
     var fx = this.policyFx();
     s.fx = fx;
@@ -215,7 +230,13 @@
     if (s.workforce > 0) t -= 14 * (s.unemployed / s.workforce);
     if (this.unpaid) t -= 14;
     t += (this.security - 50) * 0.22;
+    t += this.edu * 0.04;                                     // 学びある民は落ち着く
     return H.clamp(t, 0, 100);
+  };
+
+  /* ---------- 教育水準 → 普請グレード (0..2) ---------- */
+  State.prototype.buildingGrade = function () {
+    return this.edu >= B.EDU_GRADE2 ? 2 : (this.edu >= B.EDU_GRADE1 ? 1 : 0);
   };
 
   /* ---------- 時間進行 ---------- */
@@ -278,6 +299,22 @@
     /* 治安と民心 */
     this.security = H.clamp(s.securityNow, 0, 100);
     this.morale = H.clamp(this.morale + (s.moraleTarget - this.morale) * 0.25, 0, 100);
+
+    /* 教育水準 — 学問所の広まりに応じてゆっくり変わる */
+    this.edu = H.clamp(this.edu + (s.eduTarget - this.edu) * 0.12, 0, 100);
+    var grade = this.buildingGrade();
+    if (grade !== this._grade) {
+      var up = grade > this._grade;
+      this._grade = grade;
+      if (up) {
+        this.say(grade === 2
+          ? '学問が盛んになり、瓦葺きの家と磚(せん)積みの城壁が現れた。普請はいっそう堅牢になった'
+          : '学びが行き渡り、民は家々や城壁を丁寧に普請するようになった', 'good');
+      } else {
+        this.say('教育が衰え、家々や城壁の普請が粗末になってきた', 'warn');
+      }
+      this.emit('grade', grade);
+    }
 
     /* 人口 */
     if (this._warnStore > 0) this._warnStore--;
@@ -388,7 +425,7 @@
       policies: Object.keys(this.policies),
       unpaid: this.unpaid, totalBuilt: this.totalBuilt,
       nation: this.nation, fame: Math.round(this.fame * 10) / 10,
-      hegemon: this.hegemon
+      hegemon: this.hegemon, edu: Math.round(this.edu * 10) / 10
     };
   };
 
@@ -404,6 +441,8 @@
     this.nation = d.nation || null;
     this.fame = d.fame === undefined ? 30 : d.fame;
     this.hegemon = !!d.hegemon;
+    this.edu = d.edu === undefined ? 8 : d.edu;
+    this._grade = this.buildingGrade();
   };
 
   H.State = State;

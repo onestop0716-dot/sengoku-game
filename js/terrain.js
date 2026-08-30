@@ -203,6 +203,22 @@
     return out;
   };
 
+  /* 全タイルの頂点カラーを塗り直す。
+     useJitter=true で生成時と同じ乱数むら (ローポリ調)、false で均した色 (なめらか調) */
+  Terrain.prototype.recolorAll = function (THREE, mesh, useJitter) {
+    var col = mesh.geometry.attributes.color;
+    var rng = useJitter ? H.makeRng(this.seed + 99) : null;   // buildMesh と同じ列で復元
+    var tmp = new THREE.Color();
+    for (var z = 0; z < this.G; z++) {
+      for (var x = 0; x < this.G; x++) {
+        this.tileColor(THREE, x, z, tmp, rng);
+        var base = (x + z * this.G) * 6;
+        for (var i = 0; i < 6; i++) col.setXYZ(base + i, tmp.r, tmp.g, tmp.b);
+      }
+    }
+    col.needsUpdate = true;
+  };
+
   /* タイル1枚ぶんの頂点カラーを塗り直す (開墾したときなど) */
   Terrain.prototype.recolorTile = function (THREE, mesh, x, z) {
     var col = mesh.geometry.attributes.color;

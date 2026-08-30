@@ -74,6 +74,10 @@
     $('btn-diplo').onclick = function () { self.openDiplo(); };
     $('btn-save').onclick = function () { self.openSave(); };
 
+    /* 画質 (ローポリ ⇔ なめらか) */
+    $('btn-quality').onclick = function () { self.game.toggleSmooth(); };
+    this.setQualityButton(game.smooth);
+
     /* 探訪モード */
     $('btn-walk').onclick = function () { self.game.toggleWalk(); };
     $('modal-close').onclick = function () { self.closeModal(); };
@@ -232,6 +236,13 @@
     }
   };
 
+  /* ---------------- 画質ボタン ---------------- */
+  UI.setQualityButton = function (smooth) {
+    var b = $('btn-quality');
+    b.classList.toggle('on', !!smooth);
+    b.textContent = smooth ? '画質:滑' : '画質';
+  };
+
   /* ---------------- 探訪モードの会話 UI ---------------- */
   UI.setWalkButton = function (on) {
     $('btn-walk').classList.toggle('on', !!on);
@@ -289,6 +300,8 @@
     $('morale-val').textContent = Math.round(st.morale);
     $('security-bar').style.width = Math.round(st.security) + '%';
     $('security-val').textContent = Math.round(st.security);
+    $('edu-bar').style.width = Math.round(st.edu) + '%';
+    $('edu-val').textContent = Math.round(st.edu);
     $('fame-bar').style.width = H.clamp(Math.round(st.fame / 150 * 100), 0, 100) + '%';
     $('fame-val').textContent = Math.round(st.fame);
 
@@ -533,6 +546,23 @@
           (chk.ok ? '布告する' : chk.why) + '</button>') +
         '</div></div>';
     });
+
+    /* --- 教育と普請 --- */
+    var s0 = st.compute();
+    var gradeName = ['粗末 (版築と茅葺き)', '丁寧 (木組みと整った茅葺き)', '堅牢 (瓦葺きと磚積み)'];
+    html += '<h3>教育と普請</h3>';
+    html += '<div class="era-desc">教育水準 <b>' + Math.round(st.edu) + '</b>' +
+      ' (向かう先: ' + Math.round(s0.eduTarget) + ')' +
+      ' — 学問所は約' + H.BALANCE.EDU_ACADEMY + '人、官署は約' + H.BALANCE.EDU_OFFICE +
+      '人の民に学びを授ける。人口が増えたら学問所も増やすこと。</div>';
+    html += '<div class="req-row ' + (st.buildingGrade() >= 1 ? 'req-ok' : 'req-no') + '">' +
+      '<span>' + (st.buildingGrade() >= 1 ? '✓ ' : '・') + '教育' + H.BALANCE.EDU_GRADE1 +
+      'で普請が丁寧になる</span><span>住居+1 / 防衛+25%</span></div>';
+    html += '<div class="req-row ' + (st.buildingGrade() >= 2 ? 'req-ok' : 'req-no') + '">' +
+      '<span>' + (st.buildingGrade() >= 2 ? '✓ ' : '・') + '教育' + H.BALANCE.EDU_GRADE2 +
+      'で瓦葺き・磚積みになる</span><span>住居+2 / 防衛+50%</span></div>';
+    html += '<div style="font-size:11.5px;color:#bdae90;margin-top:3px;">いまの普請: ' +
+      gradeName[st.buildingGrade()] + '。里や城壁の見た目も変わる。</div>';
 
     /* --- 時代 --- */
     html += '<h3>時代</h3>';

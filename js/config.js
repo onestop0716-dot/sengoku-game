@@ -297,7 +297,13 @@ window.HADO = window.HADO || {};
     GROWTH_RATE: 0.035,      // 好条件下の人口増加率(季節)
     STARVE_RATE: 0.3,        // 食にあぶれた者のうち命を落とす割合(季節)
     BASE_MORALE: 52,
-    BASE_SECURITY: 45
+    BASE_SECURITY: 45,
+    /* 教育: 建物が「学びを授けられる人数」。人口に対する割合が教育水準の目標になる */
+    EDU_ACADEMY: 60,         // 学問所1つがみられる人数
+    EDU_OFFICE: 12,          // 官署 (書記が文字を教える)
+    EDU_PALACE: 20,          // 宮殿 (朝廷の学)
+    EDU_GRADE1: 40,          // 普請グレード1になる教育水準
+    EDU_GRADE2: 75           // 普請グレード2になる教育水準
   };
 
   /* ---------- 色 ---------- */

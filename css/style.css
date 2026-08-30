@@ -34,11 +34,13 @@ body{
 
 /* ---------- 上部バー ---------- */
 #topbar{
-  position:absolute;top:0;left:0;right:0;height:58px;
+  position:absolute;top:0;left:0;right:0;
   display:flex;align-items:stretch;gap:12px;
-  padding:0 14px;
-  background:linear-gradient(180deg, rgba(20,16,12,.96) 0%, rgba(20,16,12,.80) 78%, rgba(20,16,12,0) 100%);
+  padding:5px 14px 7px;
+  /* グラデーションで下端が透けると数値が読めないので、不透明の帯にする */
+  background:rgba(20,16,12,.94);
   border-bottom:1px solid rgba(141,113,69,.45);
+  box-shadow:0 4px 18px rgba(0,0,0,.35);
   pointer-events:none;
 }
 #era-box{display:flex;flex-direction:column;justify-content:center;min-width:170px;}
@@ -57,7 +59,7 @@ body{
 .res .r-delta{font-size:11px;font-variant-numeric:tabular-nums;}
 .d-plus{color:var(--good);} .d-minus{color:var(--bad);} .d-zero{color:#7d7364;}
 
-#stat-box{display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:186px;}
+#stat-box{display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:186px;}
 .stat{display:flex;align-items:center;gap:7px;font-size:11px;}
 .stat-label{color:var(--gold-dim);letter-spacing:.14em;width:28px;}
 .bar{flex:1;height:7px;background:rgba(0,0,0,.55);border:1px solid rgba(141,113,69,.4);}
@@ -381,3 +383,4 @@ body{
   color:var(--gold);background:rgba(48,39,26,.9);border:1px solid var(--line-2);
 }
 #continue-btn:hover{border-color:var(--gold);background:rgba(60,48,30,.95);}
+.menu-btn.on{background:var(--gold);color:#1a150e;border-color:var(--gold);}

@@ -98,6 +98,9 @@
     window.addEventListener('resize', function () { self.resize(); });
     this.resize();
 
+    /* --- 画質設定の復元 --- */
+    try { this.smooth = localStorage.getItem(C.SAVE_PREFIX + 'smooth') === '1'; } catch (e) { this.smooth = false; }
+
     /* --- 世界の生成 --- */
     var seed = C.SEED || (Math.floor(Math.random() * 100000) + 1);
     this.buildWorld(seed);
@@ -165,6 +168,10 @@
         if (self.nations) self.nations.onYear();
         self.autosave();
       }
+      if (ev === 'grade') {
+        self.city.setGrade(data);
+        self.needShadow = true;
+      }
       if (ev === 'era') {
         H.UI.renderBuildList();
         H.UI.buildResourceBar();
@@ -176,6 +183,25 @@
     /* 木々は開墾情報を反映してから作りたいので、ここでは遅延生成できるようにする */
     this.trees = null;
     this._lookSeason = -1;
+    this.needShadow = true;
+    this.applySmooth();
+  };
+
+  /* ---------------- 画質 (ローポリ ⇔ なめらか) ----------------
+     なめらか: 地形の法線を連続化し、タイル色の乱数むらをならして陰影を滑らかにする */
+  Game.toggleSmooth = function () {
+    this.smooth = !this.smooth;
+    try { localStorage.setItem(H.CONFIG.SAVE_PREFIX + 'smooth', this.smooth ? '1' : '0'); } catch (e) {}
+    this.applySmooth();
+    H.UI.setQualityButton(this.smooth);
+    H.UI.log(this.smooth ? '画質を「なめらか」にした。丘の陰影が柔らかくなる'
+                         : '画質を「ローポリ」にした。面の切り替わりがくっきり出る');
+  };
+
+  Game.applySmooth = function () {
+    if (!this.terrainMesh) return;
+    this.terrain.applyShading(THREE, this.terrainMesh, this.smooth);
+    this.terrain.recolorAll(THREE, this.terrainMesh, !this.smooth);
     this.needShadow = true;
   };
 
@@ -353,6 +379,7 @@
     this.nations.deserialize(data.nations);
     this.nations.setPlayer(this.state.nation);
     this.trade.deserialize(data.trade);
+    this.city.setGrade(this.state.buildingGrade());   // 教育水準ぶんの普請を反映
     this.buildTrees();                     // 開墾反映後に木を生やす
     this.citizens = new H.Citizens(THREE, this.terrain, this.city, this.state, this.scene);
     this.applyStyle();
@@ -471,10 +498,10 @@
       /* 城壁は隣とつながった形でプレビューする */
       if (def.id === 'wall') {
         var wm = this.city.wallMaskAt(x, z);
-        this.ghost.geometry = H.wallGeometry(THREE, wm);
+        this.ghost.geometry = H.wallGeometry(THREE, wm, this.city.grade);
         this.ghost.rotation.y = wm ? 0 : this.buildRot * Math.PI / 2;
       } else {
-        this.ghost.geometry = H.buildingGeometry(THREE, def.id);
+        this.ghost.geometry = H.buildingGeometry(THREE, def.id, this.city.grade);
         this.ghost.rotation.y = this.buildRot * Math.PI / 2;
       }
       this.ghost.material = H.ghostMaterial(THREE, ok);

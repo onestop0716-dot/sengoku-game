@@ -91,28 +91,59 @@
   var CO = H.COLOR;
   var FACTORY = {};
 
+  /* ---------- 建物グレード (教育水準で普請の質が変わる) ----------
+     grade 0: 版築+茅葺きの粗末な普請 / 1: 木組みと丁寧な茅葺き / 2: 白壁+瓦葺き */
+  var GRADE = {
+    base:  [0x6a5a42, 0x7a6a50, 0x8d8a80],   // 基壇: 土 → 突き固め → 石積み
+    wallc: [0,        0xcdb98f, 0xd8cfb4],   // 壁 (0は建物ごとの既定色)
+    roof:  [0,        0xa88f58, 0]           // 屋根 (0は既定)
+  };
+
   /* --- 里(住居) --- */
-  FACTORY.house = function (gb) {
-    gb.box(1.6, 0.16, 1.6, 0, -0.7, 0, 0x6a5a42);           // 基壇
-    gb.box(1.25, 0.85, 1.15, 0, -0.55, 0, CO.rammed);        // 版築の壁
-    gb.cone(1.12, 0.72, 4, 0, 0.3, 0, CO.thatch);            // 茅葺き屋根
-    gb.box(0.3, 0.5, 0.06, 0, -0.55, 0.6, CO.woodDark);      // 戸口
-    gb.box(0.5, 0.1, 0.5, 0.62, -0.55, -0.55, 0x8a7a5e);     // 小屋
-    gb.cyl(0.06, 0.06, 0.6, 5, -0.72, -0.55, 0.5, CO.wood);  // 杭
+  FACTORY.house = function (gb, g) {
+    if (g >= 2) {
+      /* 瓦葺きの堅牢な家 */
+      gb.box(1.7, 0.22, 1.7, 0, -0.7, 0, GRADE.base[2]);       // 石積みの基壇
+      gb.box(1.35, 0.85, 1.15, 0, -0.48, 0, GRADE.wallc[2]);   // 白壁
+      gb.gable(1.6, 0.6, 1.4, 0, 0.37, 0, CO.tile);            // 瓦屋根
+      gb.box(0.32, 0.55, 0.06, 0, -0.48, 0.59, 0x8a3b2a);      // 朱塗りの戸
+      gb.cyl(0.05, 0.05, 0.6, 5, -0.6, -0.48, 0.56, CO.vermilion);
+      gb.cyl(0.05, 0.05, 0.6, 5, 0.6, -0.48, 0.56, CO.vermilion);
+      gb.box(0.5, 0.12, 0.5, 0.62, -0.48, -0.58, 0x9a917e);    // 納屋
+    } else if (g === 1) {
+      /* 木組みの丁寧な普請 */
+      gb.box(1.65, 0.18, 1.65, 0, -0.7, 0, GRADE.base[1]);
+      gb.box(1.3, 0.82, 1.12, 0, -0.52, 0, GRADE.wallc[1]);
+      gb.gable(1.55, 0.55, 1.35, 0, 0.3, 0, GRADE.roof[1]);    // 整った茅葺き
+      gb.box(0.3, 0.5, 0.06, 0, -0.52, 0.57, CO.woodDark);
+      gb.box(0.06, 0.36, 0.9, 0.76, -0.52, 0.1, CO.wood);      // 垣
+      gb.box(0.5, 0.1, 0.5, -0.6, -0.52, -0.58, 0x8a7a5e);
+    } else {
+      gb.box(1.6, 0.16, 1.6, 0, -0.7, 0, GRADE.base[0]);       // 基壇
+      gb.box(1.25, 0.85, 1.15, 0, -0.55, 0, CO.rammed);        // 版築の壁
+      gb.cone(1.12, 0.72, 4, 0, 0.3, 0, CO.thatch);            // 茅葺き屋根
+      gb.box(0.3, 0.5, 0.06, 0, -0.55, 0.6, CO.woodDark);      // 戸口
+      gb.box(0.5, 0.1, 0.5, 0.62, -0.55, -0.55, 0x8a7a5e);     // 小屋
+      gb.cyl(0.06, 0.06, 0.6, 5, -0.72, -0.55, 0.5, CO.wood);  // 杭
+    }
   };
 
   /* --- 里門と閭 --- */
-  FACTORY.ward = function (gb) {
-    gb.box(1.85, 0.14, 1.85, 0, -0.7, 0, 0x6a5a42);
+  FACTORY.ward = function (gb, g) {
+    g = g || 0;
+    var base = GRADE.base[g];
+    var wallc = g ? GRADE.wallc[g] : CO.rammed;
+    var roof = g >= 2 ? CO.tile : (g === 1 ? GRADE.roof[1] : CO.thatch);
+    gb.box(1.85, 0.14 + g * 0.04, 1.85, 0, -0.7, 0, base);
     var spots = [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.5]];
     for (var i = 0; i < spots.length; i++) {
-      gb.box(0.66, 0.6, 0.6, spots[i][0], -0.56, spots[i][1], CO.rammed);
-      gb.cone(0.62, 0.45, 4, spots[i][0], -0.0, spots[i][1], CO.thatch);
+      gb.box(0.66, 0.6, 0.6, spots[i][0], -0.56, spots[i][1], wallc);
+      gb.cone(0.62, 0.45, 4, spots[i][0], -0.0, spots[i][1], roof);
     }
     gb.cyl(0.08, 0.09, 1.0, 6, 0.28, -0.56, 0.62, CO.vermilion);
     gb.cyl(0.08, 0.09, 1.0, 6, 0.78, -0.56, 0.62, CO.vermilion);
     gb.box(0.75, 0.12, 0.16, 0.53, 0.44, 0.62, CO.tile);
-    gb.box(1.8, 0.5, 0.12, 0, -0.56, -0.9, CO.rammed);
+    gb.box(1.8, 0.5, 0.12, 0, -0.56, -0.9, wallc);
   };
 
   /* --- 粟田 --- */
@@ -247,33 +278,51 @@
     }
   };
 
+  /* 城壁系の材質パレット (グレードで泥壁 → 整った版築 → 磚積みへ) */
+  var WALLPAL = [
+    { ram: CO.rammed, top: 0xbfa980, mer: 0xd0bb90, walk: 0xa8956f },   // 版築
+    { ram: 0xb2a17c, top: 0xc9b892, mer: 0xdfcfa4, walk: 0xa8956f },   // 丁寧な版築
+    { ram: 0x8f8d86, top: 0xa5a39c, mer: 0xc4c2ba, walk: 0x8a887f }    // 磚(せん)積み
+  ];
+
   /* --- 城壁 --- */
-  FACTORY.wall = function (gb) {
-    gb.box(2.02, 0.9, 1.0, 0, -0.75, 0, CO.rammed);        // 版築の下部
-    gb.box(2.02, 0.5, 0.8, 0, 0.15, 0, 0xbfa980);          // 上部(やや細い)
+  FACTORY.wall = function (gb, g) {
+    g = g || 0;
+    var P = WALLPAL[g];
+    var hUp = g * 0.1;                                     // 上等な壁ほど少し高い
+    gb.box(2.02, 0.9 + hUp, 1.0, 0, -0.75, 0, P.ram);      // 下部
+    gb.box(2.02, 0.5, 0.8, 0, 0.15 + hUp, 0, P.top);       // 上部(やや細い)
     for (var i = 0; i < 4; i++) {
-      gb.box(0.3, 0.22, 0.16, -0.75 + i * 0.5, 0.65, -0.32, 0xd0bb90);  // 女牆
+      gb.box(0.3, 0.22 + g * 0.04, 0.16, -0.75 + i * 0.5, 0.65 + hUp, -0.32, P.mer);  // 女牆
     }
-    gb.box(1.9, 0.05, 0.42, 0, 0.65, 0.16, 0xa8956f);      // 通路
+    gb.box(1.9, 0.05, 0.42, 0, 0.65 + hUp, 0.16, P.walk);  // 通路
   };
 
   /* --- 城門 --- */
-  FACTORY.gate = function (gb) {
-    gb.box(0.62, 1.5, 1.05, -0.7, -0.75, 0, CO.rammed);
-    gb.box(0.62, 1.5, 1.05, 0.7, -0.75, 0, CO.rammed);
-    gb.box(2.02, 0.35, 1.05, 0, 0.75, 0, CO.rammed);
-    gb.box(0.78, 0.9, 0.14, 0, -0.75, 0.5, CO.woodDark);   // 扉
+  FACTORY.gate = function (gb, g) {
+    var P = WALLPAL[g || 0];
+    gb.box(0.62, 1.5, 1.05, -0.7, -0.75, 0, P.ram);
+    gb.box(0.62, 1.5, 1.05, 0.7, -0.75, 0, P.ram);
+    gb.box(2.02, 0.35, 1.05, 0, 0.75, 0, P.ram);
+    gb.box(0.78, 0.9, 0.14, 0, -0.75, 0.5, g >= 2 ? 0x4a3826 : CO.woodDark);   // 扉
+    if (g >= 1) {                                          // 扉の鋲
+      gb.box(0.06, 0.06, 0.04, -0.2, -0.35, 0.56, CO.bronze);
+      gb.box(0.06, 0.06, 0.04, 0.2, -0.35, 0.56, CO.bronze);
+    }
     gb.gable(2.2, 0.55, 1.35, 0, 1.1, 0, CO.tile);
     gb.cyl(0.07, 0.07, 0.7, 5, -0.85, 1.6, 0.4, CO.wood);
     gb.box(0.16, 0.45, 0.03, -0.85, 2.05, 0.4, CO.vermilion);
   };
 
   /* --- 望楼 --- */
-  FACTORY.tower = function (gb) {
-    gb.box(1.3, 0.2, 1.3, 0, -0.72, 0, 0x6a5a42);
+  FACTORY.tower = function (gb, g) {
+    g = g || 0;
+    var legc = g >= 2 ? 0x8a3b2a : CO.wood;                // 上等な楼は朱塗りの柱
+    var roof = g >= 2 ? CO.tile : (g === 1 ? GRADE.roof[1] : CO.thatch);
+    gb.box(1.3, 0.2, 1.3, 0, -0.72, 0, GRADE.base[g]);
     var legs = [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]];
     for (var i = 0; i < legs.length; i++) {
-      gb.cyl(0.08, 0.11, 1.7, 5, legs[i][0] * 0.6, -0.55, legs[i][1] * 0.6, CO.wood);
+      gb.cyl(0.08, 0.11, 1.7, 5, legs[i][0] * 0.6, -0.55, legs[i][1] * 0.6, legc);
     }
     gb.box(1.05, 0.06, 1.05, 0, -0.5, 0, CO.woodDark);
     gb.box(1.2, 0.12, 1.2, 0, 1.1, 0, CO.wood);            // 楼台
@@ -281,7 +330,7 @@
     gb.box(1.15, 0.3, 0.08, 0, 1.22, 0.55, CO.woodDark);
     gb.box(0.08, 0.3, 1.15, -0.55, 1.22, 0, CO.woodDark);
     gb.box(0.08, 0.3, 1.15, 0.55, 1.22, 0, CO.woodDark);
-    gb.cone(0.95, 0.55, 4, 0, 1.55, 0, CO.thatch);
+    gb.cone(0.95, 0.55, 4, 0, 1.55, 0, roof);
     gb.box(0.1, 0.35, 0.02, 0.4, 2.1, 0, CO.vermilion);
   };
 
@@ -372,13 +421,15 @@
      mask: 隣に城壁/城門がある方向のビット (1=北 z-1, 2=東 x+1, 4=南 z+1, 8=西 x-1)
      mask=0 は従来の一枚壁 (向きはRキーに従う)。接続時は中央の墩台から
      各方向へ腕を伸ばし、隣のタイルの腕と縁で噛み合って一続きに見える。 */
-  H.wallGeometry = function (THREE, mask) {
-    if (!mask) return H.buildingGeometry(THREE, 'wall');
-    var key = 'wall#' + mask;
+  H.wallGeometry = function (THREE, mask, grade) {
+    grade = grade || 0;
+    if (!mask) return H.buildingGeometry(THREE, 'wall', grade);
+    var key = 'wall#' + mask + '#' + grade;
     if (cache[key]) return cache[key];
 
     var gb = new GB(THREE);
-    var RAM = CO.rammed, TOP = 0xbfa980, MER = 0xd0bb90, WALK = 0xa8956f;
+    var P = WALLPAL[grade];
+    var RAM = P.ram, TOP = P.top, MER = P.mer, WALK = P.walk;
 
     /* 中央の墩台 — どの接続形でも同じ「四隅の4つの出っ張り」で統一する */
     gb.box(1.04, 0.9, 1.04, 0, -0.75, 0, RAM);
@@ -413,16 +464,20 @@
     return cache[key];
   };
 
-  /* ---------- キャッシュ ---------- */
+  /* ---------- キャッシュ ----------
+     グレードで見た目が変わるのは GRADED の建物のみ。それ以外は grade を無視して共有 */
   var cache = {};
-  H.buildingGeometry = function (THREE, id) {
-    if (cache[id]) return cache[id];
+  var GRADED = { house: 1, ward: 1, wall: 1, gate: 1, tower: 1 };
+  H.buildingGeometry = function (THREE, id, grade) {
+    var g = GRADED[id] ? (grade || 0) : 0;
+    var key = g ? id + '#g' + g : id;
+    if (cache[key]) return cache[key];
     var gb = new GB(THREE);
     var f = FACTORY[id];
-    if (f) f(gb);
+    if (f) f(gb, g);
     else gb.box(1.2, 0.9, 1.2, 0, -0.6, 0, CO.rammed);
-    cache[id] = gb.build();
-    return cache[id];
+    cache[key] = gb.build();
+    return cache[key];
   };
 
   H.buildingMaterial = function (THREE) {
