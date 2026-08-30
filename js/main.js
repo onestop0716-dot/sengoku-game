@@ -139,18 +139,17 @@
     this.seed = seed;
 
     this.terrain = new H.Terrain(seed);
-    this.terrainMesh = this.terrain.buildMesh(THREE);
-    this.scene.add(this.terrainMesh);
+    this.terrainMesh = null;               // applySmooth() が画質に応じて生成する
+    this.water = null;
     this.skirt = this.terrain.buildSkirt(THREE);
     this.scene.add(this.skirt);
-    this.water = this.terrain.buildWater(THREE);
-    this.scene.add(this.water);
 
     this.cityGroup = new THREE.Group();
     this.scene.add(this.cityGroup);
     this.city = new H.City(THREE, this.terrain, this.cityGroup);
     this.city.onClear = function (x, z) {
-      self.terrain.recolorTile(THREE, self.terrainMesh, x, z);
+      if (self.smooth) self._hiDirty = true;   // 高精細メッシュはまとめて塗り直す
+      else self.terrain.recolorTile(THREE, self.terrainMesh, x, z);
       self.hideTreesAt(x, z);
     };
 
@@ -188,20 +187,33 @@
   };
 
   /* ---------------- 画質 (ローポリ ⇔ なめらか) ----------------
-     なめらか: 地形の法線を連続化し、タイル色の乱数むらをならして陰影を滑らかにする */
+     なめらか: 地形を4x4に細分してバイキュービック補間 + 色のにじみ + 白い波打ち際、
+     水面は頂点色つきの高精細版、建物は瓦の筋・棟・軒を足した精緻ジオメトリに置き換える */
   Game.toggleSmooth = function () {
     this.smooth = !this.smooth;
     try { localStorage.setItem(H.CONFIG.SAVE_PREFIX + 'smooth', this.smooth ? '1' : '0'); } catch (e) {}
     this.applySmooth();
     H.UI.setQualityButton(this.smooth);
-    H.UI.log(this.smooth ? '画質を「なめらか」にした。丘の陰影が柔らかくなる'
+    H.UI.log(this.smooth ? '画質を「なめらか」にした。地形は連続した起伏になり、瓦や波打ち際が描き込まれる'
                          : '画質を「ローポリ」にした。面の切り替わりがくっきり出る');
   };
 
   Game.applySmooth = function () {
-    if (!this.terrainMesh) return;
-    this.terrain.applyShading(THREE, this.terrainMesh, this.smooth);
-    this.terrain.recolorAll(THREE, this.terrainMesh, !this.smooth);
+    if (!this.terrain) return;
+    var scene = this.scene;
+    if (this.terrainMesh) { scene.remove(this.terrainMesh); this.terrainMesh.geometry.dispose(); }
+    this.terrainMesh = this.smooth ? this.terrain.buildMeshHi(THREE) : this.terrain.buildMesh(THREE);
+    scene.add(this.terrainMesh);
+    if (this.water) { scene.remove(this.water); this.water.geometry.dispose(); }
+    this.water = this.smooth ? this.terrain.buildWaterHi(THREE) : this.terrain.buildWater(THREE);
+    scene.add(this.water);
+    /* 建物の精緻ジオメトリ */
+    H.setMeshDetail(this.smooth ? 1 : 0);
+    if (this.city) this.city.refreshGeometry();
+    /* 内部解像度も少し上げる */
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.smooth ? 2.5 : 2));
+    this._lookSeason = -1;                 // 季節の色味を塗り直させる
+    this._hiDirty = false;
     this.needShadow = true;
   };
 
@@ -240,6 +252,7 @@
     this.walk = new H.Avatar(THREE, t, this.scene);
     this.walk.face = this.controls.theta + Math.PI;   // カメラに背を向けて立つ
     this.walk.setPosition(x, z);
+    this.citizens.scatter();                          // 民を街のそこかしこに立たせる
 
     /* カメラを肩越しの三人称に */
     var c = this.controls;
@@ -685,13 +698,20 @@
     this.state.tick(dt);
     this.applySeasonLook();
 
-    /* 住民 (一時停止で止まり、高速時も歩く速さは2倍まで) */
+    /* 住民 — 俯瞰では非表示。探訪モードでのみ、街に立つ姿を描く */
     var mv = this.state.speed === 0 ? 0 : Math.min(this.state.speed, 2);
     if (this.citizens) {
-      this.citizens.update(dt * mv, this.controls.radius, this.camera);
+      if (this.walkMode) this.citizens.updateWalk(dt, this.talkingWith);
+      else this.citizens.hideAll();
     }
     /* 隊商 */
     if (this.trade) this.trade.update(dt * mv);
+
+    /* 開墾で高精細メッシュの色が古くなっていたら塗り直す */
+    if (this._hiDirty && this.smooth && this.terrainMesh) {
+      this._hiDirty = false;
+      this.terrain.refreshHiColors(THREE, this.terrainMesh);
+    }
 
     /* 影の焼き直し (建物が変わったときだけ) */
     if (this.needShadow) {

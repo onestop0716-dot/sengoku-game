@@ -320,6 +320,183 @@
     return out;
   };
 
+  /* ---------------- 高精細メッシュ (なめらか画質) ----------------
+     ・1タイルを 4x4 に細分し、コーナー格子をバイキュービック補間して起伏を連続化
+     ・色はコーナーごとに周囲タイルの色を平均し、頂点間で滑らかに混ぜる
+     ・水際は白い波打ち際として明るくにじませる                          */
+  function catmull(p0, p1, p2, p3, t) {
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+  }
+
+  /* コーナー格子 (G+1)^2 上の連続高さ。gx,gz は 0..G の実数 */
+  Terrain.prototype._smoothHeight = function (gx, gz) {
+    var G = this.G, GC = G + 1, c = this.corner;
+    var x1 = Math.floor(H.clamp(gx, 0, G)), z1 = Math.floor(H.clamp(gz, 0, G));
+    if (x1 >= G) x1 = G - 1;
+    if (z1 >= G) z1 = G - 1;
+    var tx = gx - x1, tz = gz - z1;
+    function ci(x, z) {
+      x = H.clamp(x, 0, G); z = H.clamp(z, 0, G);
+      return c[x + z * GC];
+    }
+    var rows = [];
+    for (var j = -1; j <= 2; j++) {
+      rows.push(catmull(ci(x1 - 1, z1 + j), ci(x1, z1 + j), ci(x1 + 1, z1 + j), ci(x1 + 2, z1 + j), tx));
+    }
+    return catmull(rows[0], rows[1], rows[2], rows[3], tz);
+  };
+
+  /* コーナーごとの平均色 (にじみ用)。水タイルは岸の色を汚さないよう別扱い */
+  Terrain.prototype._cornerColors = function (THREE) {
+    var G = this.G, GC = G + 1;
+    var out = new Float32Array(GC * GC * 3);
+    var tmp = new THREE.Color(), acc = new THREE.Color();
+    for (var z = 0; z <= G; z++) {
+      for (var x = 0; x <= G; x++) {
+        var r = 0, g = 0, b = 0, n = 0, wr = 0, wg = 0, wb = 0, wn = 0;
+        for (var dz = -1; dz <= 0; dz++) {
+          for (var dx = -1; dx <= 0; dx++) {
+            var tx = x + dx, tz = z + dz;
+            if (tx < 0 || tz < 0 || tx >= G || tz >= G) continue;
+            this.tileColor(THREE, tx, tz, tmp, null);
+            if (this.tile[tx + tz * G] === H.T.WATER) { wr += tmp.r; wg += tmp.g; wb += tmp.b; wn++; }
+            else { r += tmp.r; g += tmp.g; b += tmp.b; n++; }
+          }
+        }
+        var k = (x + z * GC) * 3;
+        if (n) { out[k] = r / n; out[k + 1] = g / n; out[k + 2] = b / n; }
+        else if (wn) { out[k] = wr / wn; out[k + 1] = wg / wn; out[k + 2] = wb / wn; }
+      }
+    }
+    return out;
+  };
+
+  Terrain.prototype._hiColorAt = function (cc, gx, gz, h, out) {
+    var G = this.G, GC = G + 1;
+    var x0 = Math.min(Math.floor(gx), G - 1), z0 = Math.min(Math.floor(gz), G - 1);
+    var fx = gx - x0, fz = gz - z0;
+    function pick(x, z, i) { return cc[(x + z * GC) * 3 + i]; }
+    for (var i = 0; i < 3; i++) {
+      var a = H.lerp(pick(x0, z0, i), pick(x0 + 1, z0, i), fx);
+      var b = H.lerp(pick(x0, z0 + 1, i), pick(x0 + 1, z0 + 1, i), fx);
+      out[i] = H.lerp(a, b, fz);
+    }
+    /* 波打ち際: 水面すれすれの高さを白くにじませる */
+    var WL = C.WATER_LEVEL;
+    if (h > WL - 0.42 && h < WL + 0.2) {
+      var f = 1 - Math.abs(h - (WL - 0.02)) / (h >= WL - 0.02 ? 0.22 : 0.42);
+      f = H.clamp(f, 0, 1);
+      f = f * f * (3 - 2 * f) * 0.82;                    // smoothstep で柔らかく
+      out[0] = H.lerp(out[0], 0.94, f);
+      out[1] = H.lerp(out[1], 0.95, f);
+      out[2] = H.lerp(out[2], 0.93, f);
+    }
+    if (h <= WL - 0.3) {
+      /* 深くなるにつれ川底をなだらかに沈める */
+      var d = H.clamp((WL - 0.3 - h) / 1.4, 0, 0.5);
+      d = d * d * (3 - 2 * d) * 0.9;
+      out[0] *= 1 - d; out[1] *= 1 - d; out[2] *= 1 - d;
+    }
+  };
+
+  Terrain.prototype.buildMeshHi = function (THREE) {
+    var G = this.G, T = this.TILE, half = this.half;
+    var SUB = 4, N = G * SUB, NC = N + 1;
+    var cc = this._cornerColors(THREE);
+
+    var pos = new Float32Array(NC * NC * 3);
+    var col = new Float32Array(NC * NC * 3);
+    var rgb = [0, 0, 0];
+    for (var j = 0; j <= N; j++) {
+      for (var i = 0; i <= N; i++) {
+        var gx = i / SUB, gz = j / SUB;
+        var h = this._smoothHeight(gx, gz);
+        var k = (i + j * NC) * 3;
+        pos[k] = gx * T - half;
+        pos[k + 1] = h;
+        pos[k + 2] = gz * T - half;
+        this._hiColorAt(cc, Math.min(gx, G - 0.001), Math.min(gz, G - 0.001), h, rgb);
+        col[k] = rgb[0]; col[k + 1] = rgb[1]; col[k + 2] = rgb[2];
+      }
+    }
+    var idx = new Uint32Array(N * N * 6);
+    var o = 0;
+    for (j = 0; j < N; j++) {
+      for (i = 0; i < N; i++) {
+        var a = i + j * NC, b = a + 1, c2 = a + NC, d = c2 + 1;
+        idx[o++] = a; idx[o++] = c2; idx[o++] = d;
+        idx[o++] = a; idx[o++] = d; idx[o++] = b;
+      }
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    var mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    mesh.receiveShadow = true;
+    mesh.name = 'terrain';
+    mesh.userData.hi = { SUB: SUB };
+    return mesh;
+  };
+
+  /* 開墾などでタイル色が変わったとき、高精細メッシュの色だけ塗り直す */
+  Terrain.prototype.refreshHiColors = function (THREE, mesh) {
+    if (!mesh.userData.hi) return;
+    var SUB = mesh.userData.hi.SUB, G = this.G, N = G * SUB, NC = N + 1;
+    var cc = this._cornerColors(THREE);
+    var pos = mesh.geometry.attributes.position;
+    var col = mesh.geometry.attributes.color;
+    var rgb = [0, 0, 0];
+    for (var j = 0; j <= N; j++) {
+      for (var i = 0; i <= N; i++) {
+        var k = i + j * NC;
+        this._hiColorAt(cc, Math.min(i / SUB, G - 0.001), Math.min(j / SUB, G - 0.001),
+                        pos.getY(k), rgb);
+        col.setXYZ(k, rgb[0], rgb[1], rgb[2]);
+      }
+    }
+    col.needsUpdate = true;
+  };
+
+  /* 高精細の水面 — 岸に近いほど白く明るい頂点色 */
+  Terrain.prototype.buildWaterHi = function (THREE) {
+    var size = this.G * this.TILE;
+    var SEG = 64;
+    var geo = new THREE.PlaneGeometry(size, size, SEG, SEG);
+    geo.rotateX(-Math.PI / 2);
+    var pos = geo.attributes.position;
+    var col = new Float32Array(pos.count * 3);
+    var base = new THREE.Color(H.COLOR.water);
+    var deep = new THREE.Color(H.COLOR.waterDeep);
+    var foam = new THREE.Color(0xdcedf0);
+    var tmp = new THREE.Color();
+    for (var i = 0; i < pos.count; i++) {
+      var h = this.heightAt(pos.getX(i), pos.getZ(i));
+      var depth = C.WATER_LEVEL - h;
+      tmp.copy(base);
+      if (depth < 0.45) {
+        var f = H.clamp((0.45 - depth) / 0.45, 0, 1);
+        tmp.lerp(foam, f * f * 0.9);                     // 岸辺は白く
+      } else {
+        tmp.lerp(deep, H.clamp((depth - 0.45) / 1.6, 0, 0.8));
+      }
+      col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    var mat = new THREE.MeshLambertMaterial({
+      color: 0xffffff, vertexColors: true, transparent: true, opacity: 0.85
+    });
+    var m = new THREE.Mesh(geo, mat);
+    m.position.y = C.WATER_LEVEL;
+    m.name = 'water';
+    m.userData.base = geo.attributes.position.array.slice();
+    return m;
+  };
+
   /* マップ外周の土の断面 (中が空に見えないように) */
   Terrain.prototype.buildSkirt = function (THREE) {
     var G = this.G, GC = G + 1, T = this.TILE, half = this.half;

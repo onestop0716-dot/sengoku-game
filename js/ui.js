@@ -611,7 +611,7 @@
           html += '<div class="voice-row"><span class="v-name">' + cz.nameOf(vc) +
                   ' (' + cz.occLabel(vc) + ')</span><div class="voice">「' + cz.voiceOf(vc) + '」</div></div>';
         }
-        html += '<div style="font-size:11px;color:#7d7364;margin-top:2px;">街の民をクリックすると、ひとりひとりの声を聞ける。</div>';
+        html += '<div style="font-size:11px;color:#7d7364;margin-top:2px;">「探訪」で街に降り立つと、そこかしこに立つ民に E で話しかけられる。</div>';
       }
     }
 

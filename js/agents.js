@@ -1,9 +1,9 @@
 /* ============================================================
-   住民エージェント
-   ・人口ぶん (上限 MAX_AGENTS) の住民が InstancedMesh で街を歩く
-   ・住居に住み、職場に通い、市に立ち寄る一日サイクル
-   ・水域を避ける BFS 経路探索 (経路はキャッシュ)
-   ・LOD: 遠景では更新間引き、さらに遠いと非表示
+   住民
+   ・人口ぶん (上限 MAX_AGENTS) の民に住居・職場・生業を配役する
+   ・俯瞰 (選択・撤去・建設) では描画しない
+   ・探訪モードに入ると、家や職場のまわりに立つ姿を InstancedMesh で描き、
+     近づいて話しかけられる (歩き回りはしない)
    ============================================================ */
 (function (H) {
   'use strict';
@@ -153,10 +153,7 @@
     this.state = state;
     this.scene = scene;
     this.roster = [];
-    this.dayT = 0.28;             // 朝から始める
     this.dirty = true;
-    this._tick = 0;
-    this._pathCache = new Map();  // "sx,sz>tx,tz" -> [[x,z],...]
     this._rng = H.makeRng(terrain.seed + 4242);
     this._buildMeshes();
   }
@@ -411,185 +408,84 @@
     return { x: b.tx, z: b.tz };
   };
 
-  /* ---------------- 経路探索 (BFS・水域回避) ---------------- */
-  Citizens.prototype.findPath = function (sx, sz, tx, tz) {
-    var t = this.terrain, G = t.G;
-    if (sx === tx && sz === tz) return null;
-    var key = sx + ',' + sz + '>' + tx + ',' + tz;
-    var hit = this._pathCache.get(key);
-    if (hit !== undefined) return hit;
-
-    var prev = new Int32Array(G * G).fill(-1);
-    var q = new Int32Array(G * G);
-    var head = 0, tail = 0;
-    var start = sx + sz * G, goal = tx + tz * G;
-    if (t.tile[goal] === H.T.WATER) { this._cachePut(key, null); return null; }
-    q[tail++] = start; prev[start] = start;
-    var found = false;
-    while (head < tail) {
-      var cur = q[head++];
-      if (cur === goal) { found = true; break; }
-      var cx = cur % G, cz = (cur / G) | 0;
-      /* 4近傍 */
-      if (cx > 0) this._tryStep(cur - 1, cur, prev, q, tail) && tail++;
-      if (cx < G - 1) this._tryStep(cur + 1, cur, prev, q, tail) && tail++;
-      if (cz > 0) this._tryStep(cur - G, cur, prev, q, tail) && tail++;
-      if (cz < G - 1) this._tryStep(cur + G, cur, prev, q, tail) && tail++;
-    }
-    if (!found) { this._cachePut(key, null); return null; }
-
-    var path = [];
-    var node = goal;
-    while (node !== start) {
-      path.push([node % G, (node / G) | 0]);
-      node = prev[node];
-    }
-    path.reverse();
-    /* 長すぎる経路は間引いて軽くする (2タイルごと + 終点) */
-    if (path.length > 6) {
-      var thin = [];
-      for (var i = 0; i < path.length - 1; i += 2) thin.push(path[i]);
-      thin.push(path[path.length - 1]);
-      path = thin;
-    }
-    this._cachePut(key, path);
-    return path;
-  };
-
-  Citizens.prototype._tryStep = function (next, cur, prev, q, tail) {
-    if (prev[next] !== -1) return false;
-    if (this.terrain.tile[next] === H.T.WATER) { prev[next] = -2; return false; }
-    prev[next] = cur;
-    q[tail] = next;
-    return true;
-  };
-
-  Citizens.prototype._cachePut = function (key, path) {
-    if (this._pathCache.size > 600) this._pathCache.clear();
-    this._pathCache.set(key, path);
-  };
-
-  /* ---------------- 一日の行き先 ---------------- */
-  Citizens.prototype._desire = function (c) {
-    var t = (this.dayT + c.rand * 0.22) % 1;
-    if (c.work) {
-      if (t > 0.08 && t < 0.52) return 'WORK';
-      if (t >= 0.52 && t < 0.68 && c.occ !== 'merchant' && c.market && c.rand < 0.65) return 'MARKET';
-      if (t >= 0.52 && t < 0.68 && c.occ === 'merchant') return 'WORK';   // 商人は市に居続ける
-      return 'HOME';
-    }
-    if (t > 0.2 && t < 0.55 && c.market && c.rand < 0.45) return 'MARKET';
-    return 'HOME';
-  };
-
-  Citizens.prototype._placeTile = function (c, goal) {
-    if (goal === 'WORK') return c.work;
-    if (goal === 'MARKET') return c.market;
-    return c.home;
-  };
-
-  /* ---------------- 毎フレーム更新 ---------------- */
-  Citizens.prototype.update = function (dt, camRadius, camera) {
-    var THREE = this.THREE, t = this.terrain;
-
-    /* 遠景 LOD: 非表示 */
-    if (camRadius > 130) {
-      if (this.mesh.count) { this.mesh.count = 0; this.headMesh.count = 0; }
+  /* ---------------- 表示制御 ----------------
+     俯瞰 (選択・撤去・建設) では民は描かない。
+     探訪モードに入ったときだけ scatter() で街のそこかしこに立たせる。 */
+  Citizens.prototype.hideAll = function () {
+    if (this.mesh.count) {
+      this.mesh.count = 0;
+      this.headMesh.count = 0;
       this.faceMesh.count = 0;
       this._syncOutline();
-      this.dayT = (this.dayT + dt / C.DAY_SECONDS) % 1;
-      return;
     }
-    if (this.dirty) this.rebuild();
-    if (this.mesh.count !== this.roster.length) {
-      this.mesh.count = this.roster.length;
-      this.headMesh.count = this.roster.length;
-    }
-    this.faceMesh.count = this.roster.length;
-    this._syncOutline();
+  };
 
-    this.dayT = (this.dayT + dt / C.DAY_SECONDS) % 1;
+  /* 1人ぶんの行列 (位置・向き・体格) を3つのメッシュに書き込む */
+  Citizens.prototype._writeMatrix = function (i, c) {
+    var t = this.terrain, dummy = this._dummy;
+    var y = t.heightAt(c.pos.x, c.pos.z);
+    if (y < C.WATER_LEVEL) y = C.WATER_LEVEL;
+    c._y = y;
+    dummy.position.set(c.pos.x, y, c.pos.z);
+    dummy.rotation.set(0, c.face, 0);
+    var s = (0.9 + c.rand * 0.2) * (c.sMul || 1);
+    dummy.scale.set(s, s, s);
+    dummy.updateMatrix();
+    this.mesh.setMatrixAt(i, dummy.matrix);
+    this.headMesh.setMatrixAt(i, dummy.matrix);
+    this._setFace(i, c, dummy.matrix);
+  };
 
-    /* 中景 LOD: 2フレームに1回だけ動かす */
-    this._tick++;
-    if (camRadius > 70 && (this._tick & 1)) return;
-    if (dt <= 0) return;   // 一時停止中は前フレームの姿のまま
-
-    var speed = 2.3 * dt * (camRadius > 70 ? 2 : 1);
-    var dummy = this._dummy;
-
-    for (var i = 0; i < this.roster.length; i++) {
-      var c = this.roster[i];
-
-      /* 会話中は立ち止まって相手のほうを向く */
-      if (c.talking) {
-        var y0 = t.heightAt(c.pos.x, c.pos.z);
-        if (y0 < H.CONFIG.WATER_LEVEL) y0 = H.CONFIG.WATER_LEVEL;
-        c._y = y0;
-        dummy.position.set(c.pos.x, y0, c.pos.z);
-        dummy.rotation.set(0, c.face, 0);
-        var s0 = (0.9 + c.rand * 0.2) * (c.sMul || 1);
-        dummy.scale.set(s0, s0, s0);
-        dummy.updateMatrix();
-        this.mesh.setMatrixAt(i, dummy.matrix);
-        this.headMesh.setMatrixAt(i, dummy.matrix);
-        this._setFace(i, c, dummy.matrix);
-        continue;
-      }
-
-      /* 行き先の決定 */
-      var want = this._desire(c);
-      if (want !== c.goal) {
-        c.goal = want;
-        var cur = t.tileAt(c.pos.x, c.pos.z);
-        var dst = this._placeTile(c, want);
-        c.path = dst ? this.findPath(
-          H.clamp(cur.x, 0, t.G - 1), H.clamp(cur.z, 0, t.G - 1), dst.x, dst.z) : null;
-        c.pi = 0;
-      }
-
-      /* 移動 */
-      var moving = false;
-      if (c.path && c.pi < c.path.length) {
-        var wp = c.path[c.pi];
-        var txw = t.worldX(wp[0]) + c.jx, tzw = t.worldZ(wp[1]) + c.jz;
-        var dx = txw - c.pos.x, dz = tzw - c.pos.z;
-        var dist = Math.sqrt(dx * dx + dz * dz);
-        var kind = t.tile[wp[0] + wp[1] * t.G];
-        var sp = speed * (kind === H.T.HILL ? 0.7 : (kind === H.T.FOREST ? 0.75 : 1));
-        if (dist < Math.max(sp, 0.08)) {
-          c.pos.x = txw; c.pos.z = tzw; c.pi++;
-        } else {
-          c.pos.x += dx / dist * sp;
-          c.pos.z += dz / dist * sp;
-          c.face = Math.atan2(dx, dz);
-          moving = true;
-        }
-        c.walk += dt * 11;
-      } else {
-        /* 到着後はその場で小さく佇む */
-        c.walk += dt * 2;
-        c.face += Math.sin(c.walk * 0.4 + c.rand * 9) * 0.004;
-      }
-
-      var y = t.heightAt(c.pos.x, c.pos.z);
-      if (y < H.CONFIG.WATER_LEVEL) y = H.CONFIG.WATER_LEVEL;
-      var bob = moving ? Math.abs(Math.sin(c.walk)) * 0.05 : 0;
-      c._y = y + bob;                        // 顔パスで同じ位置を使う
-      dummy.position.set(c.pos.x, c._y, c.pos.z);
-      dummy.rotation.set(0, c.face, 0);
-      var s = (0.9 + c.rand * 0.2) * (c.sMul || 1);
-      dummy.scale.set(s, s, s);
-      dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, dummy.matrix);
-      this.headMesh.setMatrixAt(i, dummy.matrix);
-      this._setFace(i, c, dummy.matrix);
-    }
+  Citizens.prototype._flagUpdates = function () {
     this.mesh.instanceMatrix.needsUpdate = true;
     this.headMesh.instanceMatrix.needsUpdate = true;
     this.faceMesh.instanceMatrix.needsUpdate = true;
     this._faceCells.needsUpdate = true;
   };
+
+  /* 探訪モード開始時: 民を家・職場・市のまわりに立たせる */
+  Citizens.prototype.scatter = function () {
+    if (this.dirty) this.rebuild();
+    var t = this.terrain, roster = this.roster;
+    for (var i = 0; i < roster.length; i++) {
+      var c = roster[i];
+      var spot = (c.work && c.rand < 0.55) ? c.work :
+                 (c.market && c.rand >= 0.85) ? c.market : c.home;
+      if (!spot) spot = { x: 1, z: 1 };
+      var px = t.worldX(spot.x) + c.jx, pz = t.worldZ(spot.z) + c.jz;
+      if (t.heightAt(px, pz) < C.WATER_LEVEL) {          // 水にはみ出したら戸口の中央へ
+        px = t.worldX(spot.x); pz = t.worldZ(spot.z);
+      }
+      c.pos = { x: px, z: pz };
+      c.face = c.rand * 6.283;
+      c.talking = false;
+      this._writeMatrix(i, c);
+    }
+    this.mesh.count = roster.length;
+    this.headMesh.count = roster.length;
+    this.faceMesh.count = roster.length;
+    this._syncOutline();
+    this._flagUpdates();
+  };
+
+  /* 探訪モード中の更新: 民は歩かない。会話相手だけこちらへ振り向く */
+  Citizens.prototype.updateWalk = function (dt, talkingWith) {
+    if (this.dirty) {
+      if (talkingWith) return;                           // 会話が終わってから並べ直す
+      this.rebuild();
+      this.scatter();
+      return;
+    }
+    if (this.mesh.count !== this.roster.length) { this.scatter(); return; }
+    if (talkingWith) {
+      var i = this.roster.indexOf(talkingWith);
+      if (i >= 0) {
+        this._writeMatrix(i, talkingWith);
+        this._flagUpdates();
+      }
+    }
+  };
+
 
   /* 顔パッチを頭と同じ位置に重ね、表情のアトラスセルを選ぶ */
   Citizens.prototype._setFace = function (i, c, matrix) {
@@ -723,8 +619,9 @@
     return lines[lines.length - 1].text;
   };
 
-  /* 職業ごとの人数 (内政パネルで表示) */
+  /* 職業ごとの人数 (内政パネルで表示)。描画していなくても配役は保つ */
   Citizens.prototype.countByOcc = function () {
+    if (this.dirty) this.rebuild();
     var out = {};
     for (var k in H.OCCUPATIONS) out[k] = 0;
     for (var i = 0; i < this.roster.length; i++) out[this.roster[i].occ]++;

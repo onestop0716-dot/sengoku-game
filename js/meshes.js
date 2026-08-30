@@ -40,6 +40,18 @@
     return out;
   };
 
+  /* ---------- ディテールレベル ----------
+     0 = ローポリ / 1 = 精緻 (瓦の筋・棟・軒などを足す)。画質モードから切り替える */
+  var DETAIL = 0;
+  H.setMeshDetail = function (d) { DETAIL = d ? 1 : 0; };
+
+  /* 色を明るく/暗くする (瓦の筋などの陰影用) */
+  function shade(color, f) {
+    var r = ((color >> 16) & 255) * f, g = ((color >> 8) & 255) * f, b = (color & 255) * f;
+    r = Math.min(255, Math.round(r)); g = Math.min(255, Math.round(g)); b = Math.min(255, Math.round(b));
+    return (r << 16) | (g << 8) | b;
+  }
+
   /* ---------- 組み立て用ヘルパ ---------- */
   function GB(THREE) { this.T = THREE; this.parts = []; }
 
@@ -63,7 +75,18 @@
     var g = new this.T.ConeGeometry(r, h, seg || 4);
     g.rotateY(ry === undefined ? Math.PI / 4 : ry);
     g.translate(x, y + h / 2, z);
-    return this.push(g, color);
+    this.push(g, color);
+    /* 精緻: 葺き重ねの段を輪で表す */
+    if (DETAIL && r >= 0.4) {
+      for (var i = 1; i <= 2; i++) {
+        var fr = i / 3;
+        var ring = new this.T.CylinderGeometry(r * (1 - fr) + 0.02, r * (1 - fr) + 0.055, 0.045, seg || 4);
+        ring.rotateY(ry === undefined ? Math.PI / 4 : ry);
+        ring.translate(x, y + h * fr, z);
+        this.push(ring, shade(color, 0.82));
+      }
+    }
+    return this;
   };
 
   /* 切妻屋根 (棟が X 軸方向) */
@@ -82,7 +105,44 @@
     if (ry) g.rotateY(ry);
     g.translate(x, y, z);
     g.computeVertexNormals();
-    return this.push(g, color);
+    this.push(g, color);
+
+    /* 精緻: 筒瓦の列 (斜面を流れる畝) + 棟瓦 + 軒先 */
+    if (DETAIL && w >= 0.9) {
+      var Tj = this.T;
+      var slope = Math.sqrt(h * h + hd * hd);
+      var ang = Math.atan2(h, hd);
+      var step = Math.max(0.13, w / Math.round(w / 0.16));
+      var ribC = shade(color, 1.38);
+      for (var rx = -hw + step * 0.75; rx <= hw - step * 0.6; rx += step) {
+        /* 南斜面 (+Z)。影のアクネを避けるため面から少し浮かせる */
+        var rb1 = new Tj.BoxGeometry(0.05, 0.05, slope * 0.94);
+        rb1.rotateX(ang);                                // +Z へ降りる勾配に沿わせる
+        rb1.translate(rx, h / 2 + 0.045, hd / 2);
+        /* 北斜面 (-Z) */
+        var rb2 = new Tj.BoxGeometry(0.05, 0.05, slope * 0.94);
+        rb2.rotateX(-ang);
+        rb2.translate(rx, h / 2 + 0.045, -hd / 2);
+        if (ry) { rb1.rotateY(ry); rb2.rotateY(ry); }
+        rb1.translate(x, y, z); rb2.translate(x, y, z);
+        this.push(rb1, ribC).push(rb2, ribC);
+      }
+      /* 棟瓦と鴟尾 (しび) */
+      var ridge = new Tj.BoxGeometry(w * 1.02, 0.07, 0.12);
+      ridge.translate(0, h + 0.02, 0);
+      var e1 = new Tj.BoxGeometry(0.08, 0.16, 0.1); e1.translate(-hw * 0.98, h + 0.06, 0);
+      var e2 = new Tj.BoxGeometry(0.08, 0.16, 0.1); e2.translate(hw * 0.98, h + 0.06, 0);
+      /* 軒先の瓦当 (がとう) */
+      var v1 = new Tj.BoxGeometry(w * 1.02, 0.05, 0.07); v1.translate(0, 0.005, hd);
+      var v2 = new Tj.BoxGeometry(w * 1.02, 0.05, 0.07); v2.translate(0, 0.005, -hd);
+      var extra = [ridge, e1, e2, v1, v2];
+      for (var q = 0; q < extra.length; q++) {
+        if (ry) extra[q].rotateY(ry);
+        extra[q].translate(x, y, z);
+        this.push(extra[q], q < 3 ? shade(color, 0.72) : shade(color, 1.28));
+      }
+    }
+    return this;
   };
 
   GB.prototype.build = function () { return H.mergeGeometries(this.T, this.parts); };
@@ -424,7 +484,7 @@
   H.wallGeometry = function (THREE, mask, grade) {
     grade = grade || 0;
     if (!mask) return H.buildingGeometry(THREE, 'wall', grade);
-    var key = 'wall#' + mask + '#' + grade;
+    var key = (DETAIL ? 'D:' : '') + 'wall#' + mask + '#' + grade;
     if (cache[key]) return cache[key];
 
     var gb = new GB(THREE);
@@ -470,7 +530,7 @@
   var GRADED = { house: 1, ward: 1, wall: 1, gate: 1, tower: 1 };
   H.buildingGeometry = function (THREE, id, grade) {
     var g = GRADED[id] ? (grade || 0) : 0;
-    var key = g ? id + '#g' + g : id;
+    var key = (DETAIL ? 'D:' : '') + (g ? id + '#g' + g : id);
     if (cache[key]) return cache[key];
     var gb = new GB(THREE);
     var f = FACTORY[id];

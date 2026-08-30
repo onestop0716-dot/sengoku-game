@@ -186,13 +186,19 @@
   City.prototype.setGrade = function (g) {
     if (g === this.grade) return;
     this.grade = g;
+    this.refreshGeometry();
+  };
+
+  /* 全建物のジオメトリを現在のグレード・ディテールで作り直す */
+  City.prototype.refreshGeometry = function () {
     for (var i = 0; i < this.buildings.length; i++) {
       var b = this.buildings[i];
       if (b.id === 'wall') {
         b.mgrade = undefined;                 // 強制的に作り直させる
+        b.mask = undefined;
         this.refreshWallAt(b.tx, b.tz);
       } else {
-        b.mesh.geometry = H.buildingGeometry(this.THREE, b.id, g);
+        b.mesh.geometry = H.buildingGeometry(this.THREE, b.id, this.grade);
       }
     }
   };
