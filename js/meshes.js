@@ -555,6 +555,68 @@
     return cache[key];
   };
 
+  /* ---------- 橋 ----------
+     mask: 1=北 2=東 4=南 8=西 につながる。
+     つながる向きへ板を伸ばし、つながらない辺には欄干を立てる。
+     置かれる高さは水面基準 (city.place がY座標を決める)。            */
+  var DECK_Y = -0.44, DECK_H = 0.12;      // 板 (ローカル -0.62 が水面)
+  H.bridgeGeometry = function (THREE, mask) {
+    mask = mask || 5;                     // 孤立時はまっすぐな南北の橋
+    var key = (DETAIL ? 'D:' : '') + 'bridge#' + mask;
+    if (cache[key]) return cache[key];
+    var gb = new GB(THREE);
+    var PLANK = 0x8a6a45, BEAM = CO.woodDark, RAIL = 0x9c7a4e;
+
+    /* 板 (中央 + つながる向きへの腕) */
+    gb.box(1.24, DECK_H, 1.24, 0, DECK_Y, 0, PLANK);
+    if (mask & 1) gb.box(1.24, DECK_H, 1.05, 0, DECK_Y, -0.5, PLANK);
+    if (mask & 2) gb.box(1.05, DECK_H, 1.24, 0.5, DECK_Y, 0, PLANK);
+    if (mask & 4) gb.box(1.24, DECK_H, 1.05, 0, DECK_Y, 0.5, PLANK);
+    if (mask & 8) gb.box(1.05, DECK_H, 1.24, -0.5, DECK_Y, 0, PLANK);
+
+    /* 板目 (精緻モードのときだけ細い横木を並べる) */
+    if (DETAIL) {
+      var along = (mask & 1) || (mask & 4);
+      for (var t2 = -0.75; t2 <= 0.75; t2 += 0.3) {
+        if (along) gb.box(1.2, 0.03, 0.1, 0, DECK_Y + DECK_H, t2, BEAM);
+        else gb.box(0.1, 0.03, 1.2, t2, DECK_Y + DECK_H, 0, BEAM);
+      }
+    }
+
+    /* 欄干 — つながらない辺に手すりと柱を立てる */
+    function rail(dx, dz) {
+      var rx = dx * 0.58, rz = dz * 0.58;
+      if (dz) {
+        gb.box(1.3, 0.07, 0.07, 0, DECK_Y + 0.36, rz, RAIL);
+        gb.box(0.08, 0.34, 0.08, -0.55, DECK_Y + DECK_H, rz, BEAM);
+        gb.box(0.08, 0.34, 0.08, 0.55, DECK_Y + DECK_H, rz, BEAM);
+      } else {
+        gb.box(0.07, 0.07, 1.3, rx, DECK_Y + 0.36, 0, RAIL);
+        gb.box(0.08, 0.34, 0.08, rx, DECK_Y + DECK_H, -0.55, BEAM);
+        gb.box(0.08, 0.34, 0.08, rx, DECK_Y + DECK_H, 0.55, BEAM);
+      }
+    }
+    if (!(mask & 1)) rail(0, -1);
+    if (!(mask & 2)) rail(1, 0);
+    if (!(mask & 4)) rail(0, 1);
+    if (!(mask & 8)) rail(-1, 0);
+
+    /* 水に打ち込んだ杭 */
+    var pil = [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]];
+    for (var i = 0; i < pil.length; i++) {
+      gb.cyl(0.075, 0.09, 1.5, DETAIL ? 8 : 5, pil[i][0], -1.94, pil[i][1], BEAM);
+    }
+    cache[key] = gb.build();
+    return cache[key];
+  };
+
+  /* 建設メニューの見本などで buildingGeometry('bridge') が呼ばれたときの形 */
+  FACTORY.bridge = function (gb) {
+    gb.box(1.24, DECK_H, 2.05, 0, DECK_Y, 0, 0x8a6a45);
+    gb.box(0.07, 0.07, 2.0, -0.58, DECK_Y + 0.36, 0, 0x9c7a4e);
+    gb.box(0.07, 0.07, 2.0, 0.58, DECK_Y + 0.36, 0, 0x9c7a4e);
+  };
+
   /* ---------- キャッシュ ----------
      グレードで見た目が変わるのは GRADED の建物のみ。それ以外は grade を無視して共有 */
   var cache = {};

@@ -4,6 +4,7 @@
 (function (H) {
   'use strict';
 
+  var C = H.CONFIG;
   var MAX_SLOPE = 1.35;      // これ以上の傾斜地には建てられない
   var CLEAR_WOOD = 12;       // 森1タイルを開墾したときに得られる木材
 
@@ -32,6 +33,11 @@
         var idx = x + z * this.G;
         if (this.occupied[idx]) return { ok: false, why: 'すでに建物がある' };
         var kind = t.tile[idx];
+        if (def.water) {
+          /* 橋は水の上だけ */
+          if (kind !== H.T.WATER) return { ok: false, why: '水の上にしか架けられない' };
+          continue;
+        }
         if (kind === H.T.WATER) return { ok: false, why: '水域には建てられない' };
         if (t.slope[idx] > MAX_SLOPE) return { ok: false, why: '傾斜が急すぎる' };
 
@@ -40,6 +46,11 @@
           return { ok: false, why: H.TERRAIN_NAME[kind] + 'には建てられない' };
         }
       }
+    }
+    /* 橋は岸から、または架かっている橋の先へしか伸ばせない
+       (国史の読み込み中は、保存順に関わらず架け直せるように免除する) */
+    if (def.water && !this._loading && !this.bridgeMaskAt(tx, tz)) {
+      return { ok: false, why: '岸か、すでに架かった橋のとなりに架けること' };
     }
     if (def.nearForest && !t.nearForest(tx, tz)) return { ok: false, why: '森に隣接していない' };
     if (def.needRiver && !t.nearWater(tx, tz, 2)) return { ok: false, why: '水が近くにない' };
@@ -100,23 +111,29 @@
       maxH = Math.max(maxH, t.corner[x + z * GC]);
     }
 
-    var geo = H.buildingGeometry(THREE, def.id, this.grade);
+    var isBridge = !!def.water;
+    var bmask = isBridge ? this.bridgeMaskAt(tx, tz) : 0;
+    var geo = isBridge ? H.bridgeGeometry(THREE, bmask)
+                       : H.buildingGeometry(THREE, def.id, this.grade);
     var mesh = new THREE.Mesh(geo, H.buildingMaterial(THREE));
     var cx = t.worldX(tx) + (s - 1) * t.TILE / 2;
     var cz = t.worldZ(tz) + (s - 1) * t.TILE / 2;
-    mesh.position.set(cx, maxH + 0.62, cz);
-    mesh.rotation.y = rot * Math.PI / 2;
+    /* 橋は川底ではなく水面の高さに架ける */
+    mesh.position.set(cx, isBridge ? C.WATER_LEVEL + 0.62 : maxH + 0.62, cz);
+    mesh.rotation.y = isBridge ? 0 : rot * Math.PI / 2;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
-    var pad = H.foundationMesh(THREE, s, t.TILE, maxH - minH);
-    if (pad) mesh.add(pad);   // 子にすると撤去時も一緒に消える。基壇は正方形なので回転しても崩れない
+    if (!isBridge) {
+      var pad = H.foundationMesh(THREE, s, t.TILE, maxH - minH);
+      if (pad) mesh.add(pad);   // 子にすると撤去時も一緒に消える。基壇は正方形なので回転しても崩れない
+    }
 
     var b = {
       uid: this.nextUid++,
       id: def.id, def: def, tx: tx, tz: tz, size: s, rot: rot,
       mesh: mesh, bonus: this.bonusFor(def, tx, tz),
-      staff: 0, cleared: cleared,
+      staff: 0, cleared: cleared, mask: isBridge ? bmask : undefined,
       builtYear: null
     };
     mesh.userData.building = b;
@@ -128,6 +145,7 @@
       this.occupied[x + z * this.G] = mark;
     }
     if (def.id === 'wall' || def.id === 'gate') this.refreshWallsAround(tx, tz, s);
+    if (isBridge) this.refreshBridgesAround(tx, tz, s);
     return b;
   };
 
@@ -146,6 +164,7 @@
       }
     }
     if (b.id === 'wall' || b.id === 'gate') this.refreshWallsAround(b.tx, b.tz, b.size);
+    if (b.id === 'bridge') this.refreshBridgesAround(b.tx, b.tz, b.size);
     return true;
   };
 
@@ -153,6 +172,54 @@
     if (!this.terrain.inBounds(x, z)) return null;
     var m = this.occupied[x + z * this.G];
     return m ? this.buildings[m - 1] : null;
+  };
+
+  /* ---------- 橋 ---------- */
+  City.prototype.bridgeAt = function (x, z) {
+    var b = this.atTile(x, z);
+    return (b && b.id === 'bridge') ? b : null;
+  };
+
+  /* そのタイルの橋がつながる向き (1=北 2=東 4=南 8=西)。陸か橋につながる */
+  City.prototype.bridgeMaskAt = function (x, z) {
+    var self = this, t = this.terrain, m = 0;
+    function link(nx, nz) {
+      if (!t.inBounds(nx, nz)) return false;
+      if (t.at(nx, nz) !== H.T.WATER) return true;      // 岸
+      return !!self.bridgeAt(nx, nz);                    // 橋の続き
+    }
+    if (link(x, z - 1)) m |= 1;
+    if (link(x + 1, z)) m |= 2;
+    if (link(x, z + 1)) m |= 4;
+    if (link(x - 1, z)) m |= 8;
+    return m;
+  };
+
+  City.prototype.refreshBridgeAt = function (x, z) {
+    var b = this.bridgeAt(x, z);
+    if (!b) return;
+    var mask = this.bridgeMaskAt(x, z);
+    if (b.mask === mask) return;
+    b.mask = mask;
+    b.mesh.geometry = H.bridgeGeometry(this.THREE, mask);
+    if (b.mesh.userData.outline) b.mesh.userData.outline.geometry = b.mesh.geometry;
+  };
+
+  City.prototype.refreshBridgesAround = function (tx, tz, size) {
+    for (var z = tz - 1; z <= tz + size; z++) {
+      for (var x = tx - 1; x <= tx + size; x++) this.refreshBridgeAt(x, z);
+    }
+  };
+
+  /* 歩いて渡れるか (水は橋があるときだけ通れる) */
+  City.prototype.passableIdx = function (idx) {
+    if (this.terrain.tile[idx] !== H.T.WATER) return true;
+    var m = this.occupied[idx];
+    return !!(m && this.buildings[m - 1] && this.buildings[m - 1].id === 'bridge');
+  };
+  City.prototype.passable = function (x, z) {
+    if (!this.terrain.inBounds(x, z)) return false;
+    return this.passableIdx(x + z * this.G);
   };
 
   /* ---------- 城壁の自動接続 ---------- */
@@ -193,7 +260,9 @@
   City.prototype.refreshGeometry = function () {
     for (var i = 0; i < this.buildings.length; i++) {
       var b = this.buildings[i];
-      if (b.id === 'wall') {
+      if (b.id === 'bridge') {
+        continue;                             // 橋は普請の質に関わらず同じ形
+      } else if (b.id === 'wall') {
         b.mgrade = undefined;                 // 強制的に作り直させる
         b.mask = undefined;
         this.refreshWallAt(b.tx, b.tz);
@@ -224,6 +293,7 @@
      terrain は同じシードで再生成済みであること。 */
   City.prototype.deserialize = function (d) {
     var t = this.terrain, G = this.G;
+    this._loading = true;
     this.clearedTiles = (d.cleared || []).slice();
     for (var i = 0; i < this.clearedTiles.length; i++) {
       var idx = this.clearedTiles[i];
@@ -236,6 +306,12 @@
       var rec = d.buildings[i];
       var def = H.BUILDING_MAP[rec.id];
       if (def) this.place(def, rec.tx, rec.tz, rec.r || 0);   // 森は既に開墾済みなので二重計上しない
+    }
+    this._loading = false;
+    /* 置き終わってから橋の形をつなぎ直す */
+    for (i = 0; i < this.buildings.length; i++) {
+      var bb = this.buildings[i];
+      if (bb.id === 'bridge') this.refreshBridgeAt(bb.tx, bb.tz);
     }
   };
 

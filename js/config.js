@@ -9,7 +9,7 @@ window.HADO = window.HADO || {};
 
   /* ---------- 基本設定 ---------- */
   H.CONFIG = {
-    GRID: 64,              // マップ 64 x 64 タイル
+    GRID: 96,              // マップ 96 x 96 タイル (古いセーブは保存された広さで復元する)
     TILE: 2,               // 1タイルのワールド単位
     WATER_LEVEL: -0.35,    // 水面の高さ
     SEASON_SECONDS: 10,    // 1季節あたりの実時間(秒) @1倍速
@@ -19,6 +19,9 @@ window.HADO = window.HADO || {};
     MAX_AGENTS: 140,       // 画面上の住民の上限 (InstancedMesh)
     SAVE_PREFIX: 'hado_'   // localStorage のキー接頭辞
   };
+
+  /* 橋の板の高さ (水面より少し上) */
+  H.BRIDGE_Y = H.CONFIG.WATER_LEVEL + 0.30;
 
   /* ---------- 画質 (内部レンダリング解像度の倍率) ---------- */
   H.QUALITY = [
@@ -243,6 +246,12 @@ window.HADO = window.HADO || {};
       terrain: ['plain', 'hill'], jobs: 2,
       store: { su: 420 }, morale: 2,
       desc: 'あわを蓄える倉。凶作と籠城に備える者が国を保つ。'
+    },
+    {
+      id: 'bridge', name: '橋', cat: 'econ',
+      cost: { wood: 26, coin: 16 }, upkeep: 0.25,
+      water: true, security: 0.2,
+      desc: '川に杭を打ち、板を渡した橋。民も隊商もここから水を渡れる。岸か、すでに架かった橋の隣にしか架けられない。'
     },
     {
       id: 'armory', name: '武庫', cat: 'econ',

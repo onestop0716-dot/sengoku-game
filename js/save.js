@@ -7,7 +7,7 @@
 (function (H) {
   'use strict';
 
-  var VERSION = 4;   // v3: 他国と交易路 / v4: 軍事 (常備軍・遠征・従属)
+  var VERSION = 5;   // v3: 他国と交易路 / v4: 軍事 / v5: マップの広さ (橋)
   var SLOTS = [
     { key: 'auto',  name: '自動保存', auto: true },
     { key: 'slot1', name: '巻の一' },
@@ -44,6 +44,7 @@
       var data = {
         version: VERSION,
         seed: game.seed,
+        grid: game.terrain ? game.terrain.G : undefined,   // 広さが変わっても昔の国を再現できる
         yearText: game.state.yearText() + ' ' + game.state.seasonText(),
         savedAt: Date.now(),
         state: game.state.serialize(),

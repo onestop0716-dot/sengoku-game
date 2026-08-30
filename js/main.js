@@ -53,15 +53,13 @@
     this.sun.position.set(112, 96, 82);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(4096, 4096);
-    var span = C.GRID * C.TILE * 0.78;      // マップ全体を覆う
-    var sc = this.sun.shadow.camera;
-    sc.left = -span; sc.right = span; sc.top = span; sc.bottom = -span;
-    sc.near = 20; sc.far = 400;
-    sc.updateProjectionMatrix();
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
+    this.fitSunToMap(C.GRID * C.TILE / 2);
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
+    this.camera.far = 1400;
+    this.camera.updateProjectionMatrix();
 
     /* --- 選択ハイライトと建設プレビュー --- */
     this.highlight = new THREE.Mesh(
@@ -77,7 +75,7 @@
 
     /* --- カメラ操作 --- */
     this.controls = new H.Controls(THREE, this.camera, canvas, {
-      bound: C.GRID * C.TILE / 2 * 0.92, radius: 58
+      bound: C.GRID * C.TILE / 2 * 0.92, radius: 64
     });
 
     /* --- 入力 --- */
@@ -140,13 +138,31 @@
     });
   };
 
+  /* マップの広さに合わせて日射しと影の範囲を取り直す */
+  Game.fitSunToMap = function (half) {
+    this.sun.position.set(half * 1.75, half * 1.5, half * 1.28);
+    var span = half * 1.56;                 // マップ全体を覆う
+    var sc = this.sun.shadow.camera;
+    sc.left = -span; sc.right = span; sc.top = span; sc.bottom = -span;
+    sc.near = 20; sc.far = half * 6.25;
+    sc.updateProjectionMatrix();
+    this.scene.fog.near = half * 2.2;
+    this.scene.fog.far = half * 7.4;
+    this.needShadow = true;
+  };
+
   /* ---------------- 世界の構築 / 破棄 ---------------- */
-  Game.buildWorld = function (seed) {
+  Game.buildWorld = function (seed, grid) {
     var self = this;
     this.disposeWorld();
     this.seed = seed;
 
-    this.terrain = new H.Terrain(seed);
+    this.terrain = new H.Terrain(seed, grid);
+    /* マップの広さに合わせて、カメラの可動範囲と日射しを取り直す */
+    var half = this.terrain.half;
+    this.controls.bound = half * 0.92;
+    this.controls.maxR = Math.max(190, half * 2.8);
+    this.fitSunToMap(half);
     this.terrainMesh = null;               // applySmooth() が画質に応じて生成する
     this.water = null;
     this.skirt = this.terrain.buildSkirt(THREE);
@@ -346,7 +362,7 @@
       else { x = 0; z = 0; }
     }
 
-    this.walk = new H.Avatar(THREE, t, this.scene);
+    this.walk = new H.Avatar(THREE, t, this.scene, this.city);
     this.walk.face = this.controls.theta + Math.PI;   // カメラに背を向けて立つ
     this.walk.setPosition(x, z);
     this.citizens.scatter();                          // 民を街のそこかしこに立たせる
@@ -490,7 +506,7 @@
     var data = H.Save.load(slot);
     if (!data) { H.UI.log('その巻には何も記されていない', 'warn'); return false; }
 
-    this.buildWorld(data.seed);
+    this.buildWorld(data.seed, data.grid || 64);   // 記録のない古い国史は当時の広さ(64)で
     this.city.deserialize(data.city);      // 開墾 + 建物の再配置
     this.state.deserialize(data.state);
     this.nations.deserialize(data.nations);
@@ -613,27 +629,31 @@
       if (!isFinite(minH)) minH = 0;
       if (!isFinite(top)) top = 0;
 
-      /* 城壁は隣とつながった形でプレビューする */
+      /* 城壁と橋は隣とつながった形でプレビューする */
       if (def.id === 'wall') {
         var wm = this.city.wallMaskAt(x, z);
         this.ghost.geometry = H.wallGeometry(THREE, wm, this.city.grade);
         this.ghost.rotation.y = wm ? 0 : this.buildRot * Math.PI / 2;
+      } else if (def.water) {
+        this.ghost.geometry = H.bridgeGeometry(THREE, this.city.bridgeMaskAt(x, z));
+        this.ghost.rotation.y = 0;
       } else {
         this.ghost.geometry = H.buildingGeometry(THREE, def.id, this.city.grade);
         this.ghost.rotation.y = this.buildRot * Math.PI / 2;
       }
       this.ghost.material = H.ghostMaterial(THREE, ok);
-      /* 建物は最高コーナーに載る (city.place と同じ) のでプレビューも合わせる */
+      /* 建物は最高コーナーに載る (city.place と同じ)。橋は水面の高さ */
+      var baseY = def.water ? C.WATER_LEVEL : top;
       this.ghost.position.set(
         t.worldX(x) + (s - 1) * t.TILE / 2,
-        top + 0.62,
+        baseY + 0.62,
         t.worldZ(z) + (s - 1) * t.TILE / 2
       );
       this.ghost.visible = true;
 
       this.highlight.visible = true;
       this.highlight.scale.set(s * t.TILE * 0.98, 1, s * t.TILE * 0.98);
-      this.highlight.position.set(this.ghost.position.x, top + 0.06, this.ghost.position.z);
+      this.highlight.position.set(this.ghost.position.x, baseY + 0.06, this.ghost.position.z);
       this.highlight.material.color.setHex(ok ? 0x8ce87a : 0xe8705a);
     } else {
       this.ghost.visible = false;

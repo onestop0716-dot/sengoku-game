@@ -12,12 +12,12 @@
   var OPEN_COST = 60;         // 交易路の開設費 (貨幣)
   var AWAY_SEASONS = 1;       // 他国に滞在する季節数
 
-  /* ---------- 経路探索 (水域回避 BFS。住民と同じ規則) ---------- */
-  function findPath(t, sx, sz, tx, tz) {
+  /* ---------- 経路探索 (水域は橋があるところだけ渡れる BFS) ---------- */
+  function findPath(t, city, sx, sz, tx, tz) {
     var G = t.G;
     if (sx === tx && sz === tz) return [];
     var goal = tx + tz * G;
-    if (t.tile[goal] === H.T.WATER) return null;
+    if (!city.passableIdx(goal)) return null;
     var prev = new Int32Array(G * G).fill(-1);
     var q = new Int32Array(G * G);
     var head = 0, tail = 0;
@@ -36,7 +36,7 @@
       for (var i = 0; i < nb.length; i++) {
         var nx = nb[i];
         if (prev[nx] !== -1) continue;
-        if (t.tile[nx] === H.T.WATER) { prev[nx] = -2; continue; }
+        if (!city.passableIdx(nx)) { prev[nx] = -2; continue; }
         prev[nx] = cur;
         q[tail++] = nx;
       }
@@ -160,7 +160,7 @@
       else { x = G - 1; z = e; }
       if (t.at(x, z) === H.T.WATER) continue;
       tried++;
-      var path = findPath(t, mk.x, mk.z, x, z);
+      var path = findPath(t, this.city, mk.x, mk.z, x, z);
       if (path) return { x: x, z: z, path: path };
     }
     return null;
@@ -184,7 +184,10 @@
     if (!chk.ok) { this.state.say(n.def.name + 'への交易路を開けない — ' + chk.why, 'warn'); return false; }
     var mk = this._marketTile();
     var exit = this._exitFor(n, mk);
-    if (!exit) { this.state.say('市から' + n.def.name + 'の方角へ抜ける道が見つからない', 'warn'); return false; }
+    if (!exit) {
+      this.state.say('市から' + n.def.name + 'の方角へ抜ける道がない。川に阻まれているなら橋を架けるとよい', 'warn');
+      return false;
+    }
     this.state.res.coin -= OPEN_COST;
     this.routes[n.id] = { cd: 0, caravan: null };
     n.route = true;
@@ -274,7 +277,7 @@
             continue;
           }
           var t2 = this.terrain;
-          var back = findPath(t2, c.exit.x, c.exit.z, c.mk.x, c.mk.z);
+          var back = findPath(t2, this.city, c.exit.x, c.exit.z, c.mk.x, c.mk.z);
           if (!back) { r.caravan = null; r.cd = 1; continue; }
           c.phase = 'back';
           c.path = back;
@@ -346,7 +349,10 @@
       /* 描画 */
       if (idx < MAX_CARAVANS) {
         var y = t.heightAt(c.pos.x, c.pos.z);
-        if (y < H.CONFIG.WATER_LEVEL) y = H.CONFIG.WATER_LEVEL;
+        if (y < H.CONFIG.WATER_LEVEL) {
+          var tp = t.tileAt(c.pos.x, c.pos.z);      // 橋の上なら板の高さを歩く
+          y = this.city.bridgeAt(tp.x, tp.z) ? H.BRIDGE_Y : H.CONFIG.WATER_LEVEL;
+        }
         dummy.position.set(c.pos.x, y + 0.62, c.pos.z);
         dummy.rotation.set(0, c.face, 0);
         dummy.scale.set(1, 1, 1);

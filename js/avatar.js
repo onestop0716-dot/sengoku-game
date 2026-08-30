@@ -41,10 +41,11 @@
     return tex;
   }
 
-  function Avatar(THREE, terrain, scene) {
+  function Avatar(THREE, terrain, scene, city) {
     this.THREE = THREE;
     this.terrain = terrain;
     this.scene = scene;
+    this.city = city;              // 橋を渡れるかの判定に使う
     this.pos = { x: 0, z: 0 };
     this.face = 0;
     this.walkT = 0;
@@ -129,7 +130,8 @@
     var t = this.terrain;
     var tp = t.tileAt(wx, wz);
     if (!t.inBounds(tp.x, tp.z)) return false;
-    return t.at(tp.x, tp.z) !== H.T.WATER;
+    if (t.at(tp.x, tp.z) !== H.T.WATER) return true;
+    return !!(this.city && this.city.bridgeAt(tp.x, tp.z));   // 橋の上は渡れる
   };
 
   /* keys: Controls が集めている押下状態 / camTheta: カメラの方位角 */
@@ -160,7 +162,10 @@
 
   Avatar.prototype._place = function () {
     var y = this.terrain.heightAt(this.pos.x, this.pos.z);
-    if (y < H.CONFIG.WATER_LEVEL) y = H.CONFIG.WATER_LEVEL;
+    if (y < H.CONFIG.WATER_LEVEL) {
+      var atp = this.terrain.tileAt(this.pos.x, this.pos.z);
+      y = (this.city && this.city.bridgeAt(atp.x, atp.z)) ? H.BRIDGE_Y : H.CONFIG.WATER_LEVEL;
+    }
     this.y = y;
     var bob = this.moving ? Math.abs(Math.sin(this.walkT)) * 0.05 : 0;
     this.group.position.set(this.pos.x, y + bob, this.pos.z);

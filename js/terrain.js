@@ -8,9 +8,9 @@
 
   var C = H.CONFIG;
 
-  function Terrain(seed) {
+  function Terrain(seed, grid) {
     this.seed = seed;
-    this.G = C.GRID;
+    this.G = grid || C.GRID;      // セーブされた広さがあればそれで再現する
     this.TILE = C.TILE;
     this.half = this.G * this.TILE / 2;
     this.generate();
