@@ -108,6 +108,14 @@
     /* --- UI --- */
     H.UI.init(this);
 
+    /* --- ほのみモードの復元 (国選び画面から効かせる) --- */
+    try {
+      if (localStorage.getItem(C.SAVE_PREFIX + 'kids') === '1') {
+        H.Kids.enable();
+        H.UI.setKidsButton(true);
+      }
+    } catch (e) {}
+
     /* --- 国選び → 始まりの邑 --- */
     this.startNewRun();
 

@@ -19,6 +19,11 @@
     v = Math.round(v);
     return v >= 10000 ? (v / 1000).toFixed(1) + '千' : String(v);
   }
+  /* 値が変わったときだけ textContent を書き換える
+     (ほのみモードの変換オブザーバに無駄な仕事をさせない) */
+  function setText(el, v) {
+    if (el._raw !== v) { el._raw = v; el.textContent = v; }
+  }
   function fmtDelta(v) {
     var r = Math.round(v * 10) / 10;
     return (r > 0 ? '+' : '') + r;
@@ -90,6 +95,14 @@
 
     /* 探訪モード */
     $('btn-walk').onclick = function () { self.game.toggleWalk(); };
+
+    /* ほのみモード (やさしい言葉とふりがな) */
+    $('btn-kids').onclick = function () {
+      var on = H.Kids.toggle();
+      self.setKidsButton(on);
+      self.log(on ? '「ほのみモード」にしたよ。やさしい言葉とふりがなで表示するね'
+                  : 'ほのみモードをやめた');
+    };
     $('modal-close').onclick = function () { self.closeModal(); };
     $('modal-overlay').onclick = function (e) {
       if (e.target === $('modal-overlay')) self.closeModal();
@@ -223,6 +236,7 @@
       c.classList.toggle('on', def && c.dataset.id === def.id);
     });
     Array.prototype.forEach.call(document.querySelectorAll('.tool'), function (b) {
+      if (b.id === 'btn-kids') return;   // ほのみモードの点灯は別管理
       b.classList.toggle('on', b.dataset.tool === 'select' && !def);
     });
     this.updateHint();
@@ -234,6 +248,7 @@
     if (t !== 'build') this.selected = null;
     Array.prototype.forEach.call(document.querySelectorAll('.bcard'), function (c) { c.classList.remove('on'); });
     Array.prototype.forEach.call(document.querySelectorAll('.tool'), function (b) {
+      if (b.id === 'btn-kids') return;   // ほのみモードの点灯は別管理
       b.classList.toggle('on', b.dataset.tool === t);
     });
     this.updateHint();
@@ -252,6 +267,11 @@
     } else {
       el.textContent = '左ドラッグ:回転 / 右ドラッグ:移動 / ホイール:ズーム / R:視点リセット';
     }
+  };
+
+  /* ---------------- ほのみモードのボタン ---------------- */
+  UI.setKidsButton = function (on) {
+    $('btn-kids').classList.toggle('on', !!on);
   };
 
   /* ---------------- 画質ボタン ---------------- */
@@ -302,26 +322,26 @@
     H.RESOURCES.forEach(function (r) {
       var e = self.resEls[r.key];
       if (!e) return;                       // まだ時代が来ていない資源 (鉄など)
-      e.val.textContent = fmt(st.res[r.key]);
+      setText(e.val, fmt(st.res[r.key]));
       var d = s.delta[r.key];
-      e.delta.textContent = fmtDelta(d);
+      setText(e.delta, fmtDelta(d));
       e.delta.className = 'r-delta ' + (d > 0.05 ? 'd-plus' : (d < -0.05 ? 'd-minus' : 'd-zero'));
     });
-    this.popEl.val.textContent = fmt(st.pop);
-    this.popEl.delta.textContent = '住 ' + fmt(s.housing);
+    setText(this.popEl.val, fmt(st.pop));
+    setText(this.popEl.delta, '住 ' + fmt(s.housing));
     this.popEl.delta.className = 'r-delta ' + (st.pop > s.housing ? 'd-minus' : 'd-plus');
-    this.jobEl.val.textContent = fmt(s.workforce);
-    this.jobEl.delta.textContent = '職 ' + fmt(s.jobs);
+    setText(this.jobEl.val, fmt(s.workforce));
+    setText(this.jobEl.delta, '職 ' + fmt(s.jobs));
     this.jobEl.delta.className = 'r-delta ' + (s.workforce < s.jobs ? 'd-minus' : 'd-zero');
 
     $('morale-bar').style.width = Math.round(st.morale) + '%';
-    $('morale-val').textContent = Math.round(st.morale);
+    setText($('morale-val'), '' + Math.round(st.morale));
     $('security-bar').style.width = Math.round(st.security) + '%';
-    $('security-val').textContent = Math.round(st.security);
+    setText($('security-val'), '' + Math.round(st.security));
     $('edu-bar').style.width = Math.round(st.edu) + '%';
-    $('edu-val').textContent = Math.round(st.edu);
+    setText($('edu-val'), '' + Math.round(st.edu));
     $('fame-bar').style.width = H.clamp(Math.round(st.fame / 150 * 100), 0, 100) + '%';
-    $('fame-val').textContent = Math.round(st.fame);
+    setText($('fame-val'), '' + Math.round(st.fame));
 
     /* 他国からの要求があれば、手が空いたときにダイアログで示す */
     var na = this.game.nations;
@@ -330,9 +350,9 @@
       this.showDemand(na.demands[0]);
     }
 
-    $('year-text').textContent = st.yearText();
-    $('season-text').textContent = st.seasonText();
-    $('era-name').textContent = H.ERAS[st.era].name;
+    setText($('year-text'), st.yearText());
+    setText($('season-text'), st.seasonText());
+    setText($('era-name'), H.ERAS[st.era].name);
     $('season-fill').style.width = (st.seasonProgress() * 100).toFixed(1) + '%';
 
     if (this._afTimer === undefined) this._afTimer = 0;
@@ -1075,19 +1095,19 @@
       else { eM += u.maxMen; if (u.state !== 'gone') em += u.men; }
     }
     $('bt-pbar').style.width = (pM ? pm / pM * 100 : 0) + '%';
-    $('bt-pmen').textContent = Math.round(pm);
+    setText($('bt-pmen'), '' + Math.round(pm));
     $('bt-ebar').style.width = (eM ? em / eM * 100 : 0) + '%';
-    $('bt-emen').textContent = Math.round(em);
+    setText($('bt-emen'), '' + Math.round(em));
     if (b.opts.siege) {
       $('bt-wbar').style.width = (b.wallMaxHp ? Math.max(0, b.wallHp) / b.wallMaxHp * 100 : 0) + '%';
-      $('bt-whp').textContent = b.breached ? '破壊' : Math.round(b.wallHp);
+      setText($('bt-whp'), b.breached ? '破壊' : '' + Math.round(b.wallHp));
     }
     var sel = $('bt-sel');
     if (b.selected && b.selected.state === 'ok') {
       sel.classList.remove('hidden');
       var u2 = b.selected;
-      sel.textContent = H.UNIT_MAP[u2.type].name + ' — 兵' + Math.round(u2.men) + '/' + u2.maxMen +
-        ' 士気' + Math.round(u2.morale);
+      setText(sel, H.UNIT_MAP[u2.type].name + ' — 兵' + Math.round(u2.men) + '/' + u2.maxMen +
+        ' 士気' + Math.round(u2.morale));
     } else {
       sel.classList.add('hidden');
     }

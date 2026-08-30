@@ -493,3 +493,16 @@ body.in-battle #hint, body.in-battle #talk-prompt { display:none !important; }
   margin-top:16px;padding:8px 30px;font-family:inherit;font-size:14px;cursor:pointer;
   color:#1a150e;background:var(--gold);border:1px solid var(--gold);
 }
+
+/* ===== ほのみモード (やさしい言葉とふりがな) ===== */
+ruby rt{font-size:0.5em;color:inherit;opacity:.8;letter-spacing:0;font-weight:normal;}
+.kids-txt ruby{ruby-align:center;}
+body.kids .logline{font-size:13px;line-height:2.1;}
+body.kids #info-body{font-size:13px;line-height:2.1;}
+body.kids #modal-body{font-size:13.5px;line-height:2.15;}
+body.kids #hint{font-size:12px;line-height:1.9;}
+body.kids .bcard .b-name{line-height:1.7;}
+body.kids .voice{line-height:2.1;}
+body.kids #dialog-text{line-height:2.2;}
+body.kids .stat{font-size:11px;}
+body.kids .stat-label{width:34px;}
