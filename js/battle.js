@@ -227,6 +227,13 @@
     }
     add(0, playerSquads);
     add(1, enemySquads);
+    /* 人材の兵法・兵家の教えで我が軍が強くなる */
+    this.pfx = (this.game && this.game.state && this.game.state.battleFx)
+      ? this.game.state.battleFx() : { morale: 0, atk: 1, def: 1 };
+    for (var pi = 0; pi < this.units.length; pi++) {
+      if (this.units[pi].side !== 0) continue;
+      this.units[pi].morale = Math.min(120, this.units[pi].morale + this.pfx.morale);
+    }
 
     /* --- 兵の見た目 (歩兵系 / 戦車 / 騎兵 / 攻城) --- */
     var robe = new THREE.CylinderGeometry(0.1, 0.17, 0.55, 6); robe.translate(0, 0.28, 0);
@@ -582,7 +589,8 @@
   Battle.prototype._fight = function (a, b, dt, ranged) {
     var atk = a.def.atk * (ranged ? 1 : (a.def.range > 0 ? 0.45 : 1));
     var dps = atk * (a.men / a.def.men) * H.typeMul(a.type, b.type) *
-              this._terrainAtkMul(a, b, ranged) * (0.6 + a.morale / 200);
+              this._terrainAtkMul(a, b, ranged) * (0.6 + a.morale / 200) *
+              (a.side === 0 ? this.pfx.atk : 1);
     var loss = dps / (b.def.def * this._terrainDefMul(b) * 1.15) * dt * 0.5;
     b.men -= loss;
     b.morale -= loss / b.maxMen * 150 * (b.militia ? 1.6 : 1);

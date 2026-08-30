@@ -26,7 +26,11 @@
     this.edu = 8;             // 教育水準 (0〜100)。学問所などで上がり、普請の質が変わる
     this._grade = 0;          // いまの普請グレード (0..2)
     this.unified = false;     // 天下統一を果たしたか
+    this.difficulty = 1;      // 難易度 (H.DIFFICULTY の添字)
+    this.droughtLeft = 0;     // 干ばつの残り季節
     this.military = null;     // Military への参照 (main が設定)
+    this.persons = null;      // Persons への参照
+    this.events = null;       // Events への参照
     this.log = [];
     this.listeners = [];
     this.totalBuilt = 0;
@@ -55,7 +59,43 @@
     }
     /* 覇者の威光 */
     if (this.hegemon) fx.morale += 3;
+
+    /* 登用した人材 */
+    if (this.persons) {
+      var pf = this.persons.fx();
+      fx.grainMul *= pf.grainMul;
+      fx.coinMul *= pf.coinMul;
+      fx.taxBonus += pf.taxBonus;
+      fx.workRatio += pf.workRatio;
+      fx.morale += pf.morale;
+    }
+    /* 諸子百家の国策 */
+    if (this.events) {
+      var sf = this.events.fx();
+      fx.grainMul *= sf.grainMul;
+      fx.coinMul *= sf.coinMul;
+      fx.taxBonus += sf.taxBonus;
+      fx.morale += sf.morale;
+    }
     return fx;
+  };
+
+  /* 戦場での補正 (人材の兵法・兵家の教え) */
+  State.prototype.battleFx = function () {
+    var out = { morale: 0, atk: 1, def: 1 };
+    if (this.persons) {
+      var pf = this.persons.fx();
+      out.morale += pf.battleMorale;
+      out.atk *= pf.battleAtk;
+      out.def *= pf.defMul;
+    }
+    if (this.events) {
+      var sf = this.events.fx();
+      out.morale += sf.battleMorale;
+      out.atk *= sf.battleAtk;
+      out.def *= sf.defMul;
+    }
+    return out;
   };
 
   /* ---------- 国風の適用 (国選択時に一度だけ) ---------- */
@@ -150,12 +190,27 @@
       if (d.store) for (k in d.store) s.store[k] = (s.store[k] || 0) + d.store[k];
     }
 
+    /* 人材と国策による上乗せ */
+    var pf2 = this.persons ? this.persons.fx() : null;
+    var sf2 = this.events ? this.events.fx() : null;
+    if (pf2) {
+      s.defense *= pf2.defMul;
+      s.securityB += pf2.security / 2.2;
+      if (pf2.store) s.store.su += pf2.store;
+    }
+    if (sf2) {
+      s.defense *= sf2.defMul;
+      s.securityB += sf2.security / 2.2;
+      s.upkeep *= sf2.upkeepMul;
+    }
+
     /* 教育: 学問所などが「みられる人数」と人口の比が目標値になる */
     s.eduCover = (s.count.academy || 0) * B.EDU_ACADEMY +
                  (s.count.office || 0) * B.EDU_OFFICE +
                  (s.count.palace ? B.EDU_PALACE : 0);
     s.eduTarget = H.clamp(80 * s.eduCover / Math.max(this.pop, 30) + this.era * 4 +
-                          (this.policies.henfa ? 6 : 0), 0, 100);
+                          (this.policies.henfa ? 6 : 0) +
+                          (pf2 ? pf2.edu : 0) + (sf2 ? sf2.edu : 0), 0, 100);
 
     var fx = this.policyFx();
     s.fx = fx;
@@ -211,22 +266,27 @@
     /* 常備軍の維持 (兵は民の数に入らないぶん、兵糧と俸給を食う) */
     if (this.military) {
       var mt = this.military.totals();
+      var payMul = sf2 ? sf2.payMul : 1;
       s.armyMen = mt.men;
-      s.armyPay = mt.pay;
+      s.armyPay = mt.pay * payMul;
       s.armyFood = mt.food;
       s.delta.su -= mt.food;
-      s.delta.coin -= mt.pay;
+      s.delta.coin -= s.armyPay;
     }
+    /* 士への俸禄 */
+    s.personPay = this.persons ? this.persons.totalPay() : 0;
+    s.delta.coin -= s.personPay;
 
     s.moraleTarget = this.moraleTarget(s);
     s.securityNow = H.clamp(B.BASE_SECURITY + s.securityB * 2.2 - this.pop / 45, 0, 100);
     return s;
   };
 
-  /* 季節による生産の増減 */
+  /* 季節による生産の増減 (干ばつの年は田が実らない) */
   State.prototype.seasonFactor = function (def) {
-    if (!def.season) return 1;
-    return def.season[this.season];
+    var f = def.season ? def.season[this.season] : 1;
+    if (this.droughtLeft > 0 && def.fertile) f *= 0.35;
+    return f;
   };
 
   State.prototype.moraleTarget = function (s) {
@@ -311,6 +371,12 @@
     /* 治安と民心 */
     this.security = H.clamp(s.securityNow, 0, 100);
     this.morale = H.clamp(this.morale + (s.moraleTarget - this.morale) * 0.25, 0, 100);
+
+    if (this.droughtLeft > 0) {
+      this.droughtLeft--;
+      if (this.droughtLeft === 0) this.say('雨が戻り、田がうるおいはじめた', 'good');
+    }
+    if (this.unpaid && this.persons) this.persons.onUnpaid();
 
     /* 教育水準 — 学問所の広まりに応じてゆっくり変わる */
     this.edu = H.clamp(this.edu + (s.eduTarget - this.edu) * 0.12, 0, 100);
@@ -438,7 +504,8 @@
       unpaid: this.unpaid, totalBuilt: this.totalBuilt,
       nation: this.nation, fame: Math.round(this.fame * 10) / 10,
       hegemon: this.hegemon, edu: Math.round(this.edu * 10) / 10,
-      unified: this.unified
+      unified: this.unified, difficulty: this.difficulty,
+      drought: this.droughtLeft
     };
   };
 
@@ -457,6 +524,8 @@
     this.edu = d.edu === undefined ? 8 : d.edu;
     this._grade = this.buildingGrade();
     this.unified = !!d.unified;
+    this.difficulty = d.difficulty === undefined ? 1 : d.difficulty;
+    this.droughtLeft = d.drought || 0;
   };
 
   H.State = State;

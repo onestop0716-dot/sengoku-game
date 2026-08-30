@@ -125,16 +125,23 @@
   Game.startNewRun = function () {
     var self = this;
     this.state.speed = 0;                     // 選び終わるまで時は止まる
-    H.UI.openNationSelect(function (id) {
-      self.state.applyNation(id);
-      self.nations.setPlayer(id);
-      self.foundCity();
-      var n = H.NATION_MAP[id];
-      H.UI.afterWorldChange();
-      H.UI.setSpeed(1);
-      H.UI.log('あなたは【' + n.name + '】の君主となった。' + (n.bonus ? '国風: ' + n.bonus.text : ''), 'good');
-      H.UI.log('新たな都を築いた。まず田を開き、里を建てて民を集めよう', 'good');
-      H.UI.log(self.state.yearText() + ' — ' + H.ERAS[0].name + 'のはじまり。「外交」で諸侯の様子が見られる');
+    H.UI.openDifficultySelect(function (diff) {
+      self.state.difficulty = diff;
+      H.UI.openNationSelect(function (id) {
+        self.state.applyNation(id);
+        self.nations.setPlayer(id);
+        /* 難易度で初期の蓄えが変わる */
+        var mul = H.DIFFICULTY[diff].resMul;
+        for (var k in self.state.res) self.state.res[k] = Math.round(self.state.res[k] * mul);
+        self.foundCity();
+        var n = H.NATION_MAP[id];
+        H.UI.afterWorldChange();
+        H.UI.setSpeed(1);
+        H.UI.log('あなたは【' + n.name + '】の君主となった。' + (n.bonus ? '国風: ' + n.bonus.text : ''), 'good');
+        H.UI.log('難易度は「' + H.DIFFICULTY[diff].name + '」');
+        H.UI.log(self.state.yearText() + ' — ' + H.ERAS[0].name + 'のはじまり', 'good');
+        H.UI.maybeTutorial();
+      });
     });
   };
 
@@ -182,6 +189,10 @@
     this.trade = new H.Trade(THREE, this.terrain, this.city, this.state, this.nations, this.scene);
     this.military = new H.Military(this.state, this.nations);
     this.state.military = this.military;
+    this.persons = new H.Persons(this.state, this.nations);
+    this.events = new H.Events(this.state, this.nations, this.persons);
+    this.state.persons = this.persons;
+    this.state.events = this.events;
     this.state.on(function (ev, data) {
       if (ev === 'log') H.UI.log(data.text, data.kind);
       if (ev === 'season') {
@@ -193,6 +204,8 @@
       if (ev === 'year') {
         if (self.nations) self.nations.onYear();
         if (self.military) { self.military.onYear(); self.military.tributeIn(); }
+        if (self.persons) { self.persons.onYear(); self.persons.applyYearly(); }
+        if (self.events) self.events.onYear();
         self.autosave();
       }
       if (ev === 'grade') {
@@ -513,6 +526,8 @@
     this.nations.setPlayer(this.state.nation);
     this.trade.deserialize(data.trade);
     this.military.deserialize(data.military);
+    this.persons.deserialize(data.persons);
+    this.events.deserialize(data.events);
     this.city.setGrade(this.state.buildingGrade());   // 教育水準ぶんの普請を反映
     this.buildTrees();                     // 開墾反映後に木を生やす
     this.citizens = new H.Citizens(THREE, this.terrain, this.city, this.state, this.scene);
@@ -849,6 +864,9 @@
     }
     /* 隊商 */
     if (this.trade) this.trade.update(dt * mv);
+
+    /* 事件と人材の来訪をダイアログで知らせる */
+    H.UI.pumpDialogs();
 
     /* 開墾で高精細メッシュの色が古くなっていたら塗り直す */
     if (this._hiDirty && this.smooth && this.terrainMesh) {

@@ -197,6 +197,12 @@
     return [1, 1.15, 1.35, 1.6][this.state.era];
   };
 
+  /* 難易度による他国の攻撃性の倍率 */
+  Nations.prototype.aggrMul = function () {
+    var d = H.DIFFICULTY && H.DIFFICULTY[this.state.difficulty];
+    return d ? d.aggr : 1;
+  };
+
   /* --- 内政: 国力の成長 --- */
   Nations.prototype._grow = function () {
     var em = this._eraMul();
@@ -347,7 +353,7 @@
       if (n.subjugated) continue;               // 従属国は要求などしてこない
       if (n._demCd > 0) { n._demCd--; continue; }
       if (n.relation < 0 && n.power > pp * 1.1 && n.def.aggr > 0.4 &&
-          Math.random() < n.def.aggr * 0.12) {
+          Math.random() < n.def.aggr * 0.12 * this.aggrMul()) {
         n._demCd = 6;
         var coin = Math.round(60 + n.power);
         this.demands.push({
@@ -425,7 +431,8 @@
     if (!chk.ok) { this.state.say('贈物ができない — ' + chk.why, 'warn'); return false; }
     var c = this.giftCost(n);
     this.state.res.coin -= c;
-    var up = Math.round(10 + n.def.commerce * 5);
+    var giftMul = this.state.persons ? this.state.persons.fx().giftMul : 1;
+    var up = Math.round((10 + n.def.commerce * 5) * giftMul);
     n.relation = H.clamp(n.relation + up, -100, 100);
     this.state.say(n.def.name + 'に贈物をした。関係が改善した (+' + up + ')', 'good');
     return true;

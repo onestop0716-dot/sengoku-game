@@ -230,8 +230,9 @@
       if (n.subjugated || n.tributary) continue;
       var cd = this._invCd[n.id] || 0;
       if (cd > 0) { this._invCd[n.id] = cd - 1; continue; }
+      var aggrMul = this.nations.aggrMul ? this.nations.aggrMul() : 1;
       if (n.relation < -40 && n.power > pp * 0.8 &&
-          Math.random() < n.def.aggr * 0.14 + st.era * 0.02) {
+          Math.random() < (n.def.aggr * 0.14 + st.era * 0.02) * aggrMul) {
         this.invasion = { nationId: n.id, seasonsLeft: 1 };
         this._invCd[n.id] = 8;
         st.say('【斥候の報】' + n.def.name + 'が兵を集めている。来季にも国境を越えるだろう', 'warn');

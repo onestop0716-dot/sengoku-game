@@ -7,7 +7,7 @@
 (function (H) {
   'use strict';
 
-  var VERSION = 5;   // v3: 他国と交易路 / v4: 軍事 / v5: マップの広さ (橋)
+  var VERSION = 6;   // v4: 軍事 / v5: マップの広さ / v6: 人材・事件・難易度
   var SLOTS = [
     { key: 'auto',  name: '自動保存', auto: true },
     { key: 'slot1', name: '巻の一' },
@@ -51,7 +51,9 @@
         city: game.city.serialize(),
         nations: game.nations ? game.nations.serialize() : null,
         trade: game.trade ? game.trade.serialize() : null,
-        military: game.military ? game.military.serialize() : null
+        military: game.military ? game.military.serialize() : null,
+        persons: game.persons ? game.persons.serialize() : null,
+        events: game.events ? game.events.serialize() : null
       };
       try {
         localStorage.setItem(Save._key(slot), JSON.stringify(data));

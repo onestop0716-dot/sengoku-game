@@ -212,6 +212,7 @@
     var relMul = 0.85 + (n.relation + 100) / 200 * 0.5;                  // 0.85〜1.35
     var nb = H.NATION_MAP[st.nation];
     var natMul = (nb && nb.bonus && nb.bonus.tradeMul) || 1;
+    if (st.persons) natMul *= st.persons.fx().tradeMul;
     var p = (16 + n.power * 0.3) * n.def.specialMul * eraMul * curMul * relMul *
             (n.allied ? 1.2 : 1) * natMul;
     return Math.round(p);

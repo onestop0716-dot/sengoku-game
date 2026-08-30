@@ -107,6 +107,7 @@
     $('btn-gov').onclick = function () { self.openGov(); };
     $('btn-diplo').onclick = function () { self.openDiplo(); };
     $('btn-army').onclick = function () { self.openArmy(); };
+    $('btn-persons').onclick = function () { self.openPersons(); };
     $('btn-save').onclick = function () { self.openSave(); };
 
     /* バトルHUD */
@@ -377,12 +378,7 @@
     $('fame-bar').style.width = H.clamp(Math.round(st.fame / 150 * 100), 0, 100) + '%';
     setText($('fame-val'), '' + Math.round(st.fame));
 
-    /* 他国からの要求があれば、手が空いたときにダイアログで示す */
-    var na = this.game.nations;
-    if (na && na.demands.length && !this.game.walkMode &&
-        $('modal-overlay').classList.contains('hidden')) {
-      this.showDemand(na.demands[0]);
-    }
+    /* 事件・要求・来訪は pumpDialogs がまとめて出す (main のループから) */
 
     setText($('year-text'), st.yearText());
     setText($('season-text'), st.seasonText());
@@ -1178,6 +1174,223 @@
       ]);
   };
 
+  /* ---------------- 事件と来訪をダイアログに出す ---------------- */
+  UI.pumpDialogs = function () {
+    var g = this.game;
+    if (!g || g.battle || g.walkMode) return;
+    if (!$('modal-overlay').classList.contains('hidden')) return;
+
+    /* 他国からの要求 (Phase 3) */
+    if (g.nations && g.nations.demands.length) { this.showDemand(g.nations.demands[0]); return; }
+
+    /* ランダムイベント */
+    if (g.events && g.events.pending.length) {
+      var ev = g.events.pending.shift();
+      this.showChoice(ev.title, ev.text, ev.options);
+      return;
+    }
+
+    /* 人材の来訪 */
+    if (g.persons && g.persons.offers.length) { this.showOffer(g.persons.offers[0]); }
+  };
+
+  UI.showOffer = function (offer) {
+    var self = this, ps = this.game.persons;
+    var p = H.PERSON_MAP[offer.id];
+    var sk = H.PERSON_SKILLS[p.skill];
+    var head = offer.kind === 'exile'
+      ? (offer.fromId && H.NATION_MAP[offer.fromId] ? H.NATION_MAP[offer.fromId].name : '他国') + 'を出奔した' + p.name + 'が身を寄せてきた'
+      : (offer.kind === 'home' ? '国中の士 ' + p.name + 'が仕官を願い出た'
+                               : '諸国を巡る士 ' + p.name + 'が門を叩いた');
+    var chk = ps.canHire(offer);
+    var text = head + '。<br><br>' +
+      '<div class="pr-stat">政治 <b>' + p.pol + '</b> / 軍事 <b>' + p.war + '</b> / 外交 <b>' + p.dip + '</b></div>' +
+      '<div class="pr-skill">' + sk.name + ' — ' + sk.desc + '</div>' +
+      '<div class="pr-desc">' + p.desc + '</div>' +
+      '<div class="pr-cost">仕度金 貨幣' + offer.cost + ' / 俸禄 貨幣' + p.pay + ' 毎季' +
+      (chk.ok ? '' : '<br><span class="pr-no">' + chk.why + '</span>') + '</div>';
+    this.showChoice('士の来訪 — ' + p.name, text, [
+      { label: chk.ok ? '召し抱える (貨幣' + offer.cost + ')' : '召し抱えられない',
+        fn: function () { if (chk.ok) ps.hire(offer); else ps.decline(offer); } },
+      { label: '今は用いぬ', fn: function () { ps.decline(offer); } }
+    ]);
+  };
+
+  /* ---------------- 人材パネル ---------------- */
+  UI.openPersons = function () {
+    if (this.game.battle) return;
+    this._modal = 'persons';
+    this.renderPersons();
+  };
+
+  UI.renderPersons = function () {
+    var self = this, st = this.game.state, ps = this.game.persons;
+    if (!ps) return;
+    var body = this.openModal('人材 — 士を選び、国を託す');
+    var html = '';
+    var fx = ps.fx();
+
+    html += '<div class="diplo-self"><span class="d-my">仕える士</span>' +
+      '<span><b>' + ps.hired.length + '</b> / ' + ps.maxHired() + ' 人</span>' +
+      '<span>俸禄 貨幣' + ps.totalPay() + ' / 季</span></div>';
+    html += '<div class="d-note">抱えられる士の数は学問所と官署で増える。' +
+      '俸禄が払えないと士は去る。名声が高く学問所があるほど、賢者は訪ねてくる。</div>';
+
+    /* --- 仕えている士 --- */
+    html += '<h3>いま仕える士</h3>';
+    if (!ps.hired.length) {
+      html += '<div class="d-note">まだ誰も仕えていない。士が訪ねてきたら召し抱えよう。</div>';
+    }
+    ps.hired.forEach(function (h) {
+      var p = H.PERSON_MAP[h.id];
+      var sk = H.PERSON_SKILLS[p.skill];
+      html += '<div class="person-row">' +
+        '<div class="pr-head"><span class="pr-name">' + p.name + '</span>' +
+        '<span class="pr-skill">' + sk.name + '</span>' +
+        '<span class="pr-nums">政' + p.pol + ' 軍' + p.war + ' 外' + p.dip + '</span></div>' +
+        '<div class="pr-eff">' + sk.desc + '</div>' +
+        '<div class="pr-desc">' + p.desc + '</div>' +
+        '<div class="pr-foot"><span>俸禄 貨幣' + p.pay + '/季</span>' +
+        '<button data-dismiss="' + p.id + '">退ける</button></div></div>';
+    });
+
+    /* --- いまの効き --- */
+    if (ps.hired.length) {
+      var eff = [];
+      if (Math.abs(fx.grainMul - 1) > 0.001) eff.push('田の実り ×' + fx.grainMul.toFixed(2));
+      if (Math.abs(fx.coinMul - 1) > 0.001) eff.push('貨幣収入 ×' + fx.coinMul.toFixed(2));
+      if (fx.taxBonus) eff.push('徴税 +' + Math.round(fx.taxBonus * 100) + '%');
+      if (Math.abs(fx.defMul - 1) > 0.001) eff.push('防御 ×' + fx.defMul.toFixed(2));
+      if (fx.morale) eff.push('民心 ' + (fx.morale > 0 ? '+' : '') + Math.round(fx.morale));
+      if (fx.edu) eff.push('教育 +' + fx.edu);
+      if (fx.battleMorale) eff.push('戦場のやる気 +' + fx.battleMorale);
+      if (fx.relYear) eff.push('諸侯との関係 毎年+' + fx.relYear);
+      if (fx.flood) eff.push('黄河の氾濫を防ぐ');
+      if (eff.length) html += '<div class="army-note">合わせての効き: ' + eff.join(' / ') + '</div>';
+    }
+
+    /* --- 国策 (諸子百家) --- */
+    var evs = this.game.events;
+    if (evs) {
+      html += '<h3>国策 (諸子百家)</h3>';
+      var any = false;
+      H.SCHOOLS.forEach(function (s) {
+        if (!evs.schools[s.id]) return;
+        any = true;
+        html += '<div class="school-row adopted"><span class="sc-name">' + s.name + '</span>' +
+          '<span class="sc-eff">' + s.effect + '</span></div>';
+      });
+      if (!any) html += '<div class="d-note">まだ国策はない。学問所を建てると諸子百家が献策に訪れる。</div>';
+    }
+
+    /* --- 天下の士 (登場と仕官先) --- */
+    html += '<h3>天下の士</h3>';
+    var known = H.PERSONS.filter(function (p) { return p.era <= st.era; });
+    html += '<div class="person-grid">';
+    known.forEach(function (p) {
+      var sv = ps.serving[p.id];
+      var where = sv === 'player' ? '我が国' :
+        (sv && H.NATION_MAP[sv] ? H.NATION_MAP[sv].name : '在野');
+      html += '<div class="pchip' + (sv === 'player' ? ' mine' : (sv ? ' taken' : '')) + '" ' +
+        'title="' + p.desc.replace(/"/g, '') + '">' +
+        p.name + '<i>' + where + '</i></div>';
+    });
+    html += '</div>';
+    var later = H.PERSONS.filter(function (p) { return p.era > st.era; });
+    if (later.length) {
+      html += '<div class="d-note">この先の時代に現れる士: ' +
+        later.map(function (p) { return p.name; }).join('・') + '</div>';
+    }
+
+    body.innerHTML = html;
+    Array.prototype.forEach.call(body.querySelectorAll('button[data-dismiss]'), function (btn) {
+      btn.onclick = function () {
+        if (ps.dismiss(btn.dataset.dismiss)) self.renderPersons();
+      };
+    });
+  };
+
+  /* ---------------- 難易度選択 ---------------- */
+  UI.openDifficultySelect = function (cb) {
+    var self = this;
+    var body = this.openModal('世の難しさを選ぶ', true);
+    var html = '<div class="d-note">難易度は、はじめの蓄え・他国の攻撃性・天災の頻度を変える。' +
+               'あとから変えることはできない。</div><div class="nation-grid">';
+    H.DIFFICULTY.forEach(function (d) {
+      html += '<div class="nation-card" data-diff="' + d.id + '">' +
+        '<div class="nc-head"><span class="nc-name">' + d.name + '</span></div>' +
+        '<div class="nc-desc">' + d.desc + '</div>' +
+        '<div class="nc-bonus">はじめの蓄え ×' + d.resMul +
+        ' / 他国の攻撃性 ×' + d.aggr + ' / 天災 ×' + d.disaster + '</div></div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+    Array.prototype.forEach.call(body.querySelectorAll('.nation-card'), function (card) {
+      card.onclick = function () {
+        self.closeModal(true);
+        cb(parseInt(card.dataset.diff, 10));
+      };
+    });
+  };
+
+  /* ---------------- チュートリアル ---------------- */
+  UI.TUTORIAL = [
+    { title: 'ようこそ、君主よ', text:
+      'あなたは春秋の一国を治める君主です。都を育て、民を養い、やがて<b>天下統一</b>を目指します。<br><br>' +
+      '画面の見かた:<br>・上の帯 — あわ(食糧)・貨幣・人口と、民心/治安/教育/名声<br>' +
+      '・下の帯 — 建てるもののメニューと、時間の速さ<br>' +
+      '・右下のボタン — 内政・外交・軍務・人材・書庫' },
+    { title: 'まずは食べものから', text:
+      '民は毎季<b>あわ</b>を食べます。足りなくなると餓死者が出ます。<br><br>' +
+      '「生産」タブの<b>田畑</b>を、川の近く(肥沃度が高い)に何枚か建てましょう。' +
+      '地面をクリックすると肥沃度が見られます。<br>' +
+      'あわは<b>秋にどっと実り、冬は穫れません</b>。糧倉を建てて蓄えておくのが要です。' },
+    { title: '人を増やし、働かせる', text:
+      '「居住」タブの<b>里</b>を建てると住まいが増え、人口が増えます。<br><br>' +
+      '上の帯の「労働 / 職」に注目してください。<b>働ける人より仕事が多すぎると、' +
+      'すべての施設の稼働率が落ちます</b>。里と仕事場の数を釣り合わせましょう。' },
+    { title: '銭を稼ぎ、時代を進める', text:
+      '<b>市(いち)</b>と<b>製陶窯</b>が貨幣を生みます。窯は木材を食うので<b>木こり小屋</b>(森のとなり)も要ります。<br><br>' +
+      '「内政」では税率と政策を決められます。人口・建物・政策の条件を満たすと<b>時代が進み</b>、' +
+      '新しい建物や兵種が使えるようになります。' },
+    { title: '天下へ', text:
+      '「外交」で諸侯に贈物をし、交易路を開いて富を得ましょう。<br>' +
+      '「軍務」で兵を集めれば出兵できます。「人材」では管仲や孫武のような士を召し抱えられます。<br><br>' +
+      'ゆっくり進めたいときは下の「‖」で一時停止、急ぐときは「▶▶▶」で4倍速に。<br>' +
+      'それでは、よき治世を。' }
+  ];
+
+  UI.maybeTutorial = function () {
+    var seen = false;
+    try { seen = localStorage.getItem(H.CONFIG.SAVE_PREFIX + 'tut') === '1'; } catch (e) {}
+    if (seen) return;
+    this.startTutorial();
+  };
+
+  UI.startTutorial = function (step) {
+    var self = this;
+    step = step || 0;
+    if (step >= this.TUTORIAL.length) {
+      try { localStorage.setItem(H.CONFIG.SAVE_PREFIX + 'tut', '1'); } catch (e) {}
+      this.log('手引きはここまで。「書庫」からいつでも読み直せる');
+      return;
+    }
+    var t = this.TUTORIAL[step];
+    var opts = [];
+    if (step < this.TUTORIAL.length - 1) {
+      opts.push({ label: 'つぎへ (' + (step + 1) + '/' + (this.TUTORIAL.length - 1) + ')',
+                  fn: function () { self.startTutorial(step + 1); } });
+      opts.push({ label: '手引きを閉じる', fn: function () {
+        try { localStorage.setItem(H.CONFIG.SAVE_PREFIX + 'tut', '1'); } catch (e) {}
+      } });
+    } else {
+      opts.push({ label: 'はじめる', fn: function () {
+        try { localStorage.setItem(H.CONFIG.SAVE_PREFIX + 'tut', '1'); } catch (e) {}
+      } });
+    }
+    this.showChoice('手引き — ' + t.title, t.text, opts);
+  };
+
   /* ---------------- 書庫 (セーブ / ロード) ---------------- */
   UI.openSave = function () {
     if (this.game.battle) return;
@@ -1209,6 +1422,7 @@
         (r.auto ? '' : '<button class="s-del"' + (r.meta ? '' : ' disabled') + '>消去</button>') +
         '</div>';
     });
+    html += '<button id="tut-btn">手引き (チュートリアル) をもう一度読む</button>';
     html += '<button id="newgame-btn">新しい天地で始める (現在の国は自動保存に残る)</button>';
     body.innerHTML = html;
 
@@ -1223,6 +1437,10 @@
       };
       if (bd) bd.onclick = function () { H.Save.remove(slot); self.renderSave(); };
     });
+    $('tut-btn').onclick = function () {
+      self.closeModal();
+      self.startTutorial(0);
+    };
     $('newgame-btn').onclick = function () {
       self.game.autosave();
       self.game.newGame();
