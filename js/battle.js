@@ -220,11 +220,15 @@
     function add(side, src) {
       src.forEach(function (s) {
         var u = H.UNIT_MAP[s.type];
+        var gen = s.general ? H.PERSON_MAP[s.general] : null;
         self.units.push({
           id: s.id, side: side, type: s.type, def: u,
           men: s.men, maxMen: s.men, morale: s.morale,
           pos: { x: 0, z: 0 }, face: side === 0 ? Math.PI / 2 : -Math.PI / 2,
-          order: null, state: 'ok', militia: !!s.militia
+          order: null, state: 'ok', militia: !!s.militia,
+          general: gen,                                   // 部隊を率いる武将
+          genAtk: gen ? 1 + gen.war / 500 : 1,             // 将の軍事で攻めが増す
+          genMorale: gen ? Math.round(gen.war / 6) : 0     // 将のいる部隊は士気が高い
         });
       });
     }
@@ -234,8 +238,9 @@
     this.pfx = (this.game && this.game.state && this.game.state.battleFx)
       ? this.game.state.battleFx() : { morale: 0, atk: 1, def: 1 };
     for (var pi = 0; pi < this.units.length; pi++) {
-      if (this.units[pi].side !== 0) continue;
-      this.units[pi].morale = Math.min(120, this.units[pi].morale + this.pfx.morale);
+      var uu = this.units[pi];
+      if (uu.side === 0) uu.morale = Math.min(120, uu.morale + this.pfx.morale);
+      uu.morale = Math.min(130, uu.morale + uu.genMorale);
     }
 
     /* --- 兵の見た目 (歩兵系 / 戦車 / 騎兵 / 攻城) --- */
@@ -293,6 +298,43 @@
       new THREE.MeshLambertMaterial({ vertexColors: true }), 6);
     this.engMesh.frustumCulled = false;
     this.scene.add(this.engMesh);
+
+    /* 武将 (旗指物を負い、金の甲をまとう一騎) */
+    var gBody = new THREE.CylinderGeometry(0.13, 0.2, 0.62, 8); gBody.translate(0, 0.32, 0);
+    var gSkirt = new THREE.CylinderGeometry(0.2, 0.28, 0.22, 8); gSkirt.translate(0, 0.1, 0);
+    var gHead = new THREE.SphereGeometry(0.12, 8, 6); gHead.translate(0, 0.74, 0);
+    var gHelm = new THREE.SphereGeometry(0.135, 8, 5, 0, 6.3, 0, 1.5); gHelm.translate(0, 0.76, 0);
+    var gCrest = new THREE.ConeGeometry(0.055, 0.3, 4); gCrest.translate(0, 1.0, 0.02);
+    var gArm = new THREE.BoxGeometry(0.46, 0.1, 0.12); gArm.translate(0, 0.55, 0);
+    var gMirror = new THREE.CylinderGeometry(0.09, 0.09, 0.04, 10);   // 護心鏡
+    gMirror.rotateX(Math.PI / 2); gMirror.translate(0, 0.42, 0.15);
+    var gSash = new THREE.BoxGeometry(0.34, 0.07, 0.3);               // 金の帯
+    gSash.translate(0, 0.19, 0);
+    var gSpear = new THREE.CylinderGeometry(0.022, 0.022, 1.5, 5); gSpear.translate(0.24, 0.72, 0.06);
+    var gBlade = new THREE.ConeGeometry(0.055, 0.22, 4); gBlade.translate(0.24, 1.55, 0.06);
+    var gPole = new THREE.CylinderGeometry(0.024, 0.024, 2.0, 5); gPole.translate(-0.18, 1.05, -0.16);
+    var genGeo = H.mergeGeometries(THREE, [
+      { geo: gBody, color: 0x6e6152 }, { geo: gSkirt, color: 0x8a6b3f },
+      { geo: gHead, color: 0xd9b48c }, { geo: gHelm, color: 0xc8a552 },
+      { geo: gCrest, color: 0xe8cf94 }, { geo: gArm, color: 0x6e6152 },
+      { geo: gMirror, color: 0xe0c273 }, { geo: gSash, color: 0xc8a552 },
+      { geo: gSpear, color: 0x6d5236 }, { geo: gBlade, color: 0xd8cfb4 },
+      { geo: gPole, color: 0x54402a }
+    ]);
+    this.genMesh = new THREE.InstancedMesh(genGeo,
+      new THREE.MeshLambertMaterial({ vertexColors: true }), 16);
+    this.genMesh.frustumCulled = false;
+    this.genMesh.count = 0;
+    this.scene.add(this.genMesh);
+    /* 将の旗 (陣営色の幟) */
+    var bannerGeo = new THREE.PlaneGeometry(0.5, 0.78);
+    bannerGeo.translate(0.25, 0, 0);         // 竿から横へ垂らす (面は進行方向を向く)
+    bannerGeo.translate(-0.18, 1.6, -0.16);
+    this.bannerMesh = new THREE.InstancedMesh(bannerGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }), 16);
+    this.bannerMesh.frustumCulled = false;
+    this.bannerMesh.count = 0;
+    this.scene.add(this.bannerMesh);
 
     /* 旗と当たり判定の円盤 */
     this._flags = [];
@@ -616,7 +658,7 @@
     var atk = a.def.atk * (ranged ? 1 : (a.def.range > 0 ? 0.45 : 1));
     var dps = atk * (a.men / a.def.men) * H.typeMul(a.type, b.type) *
               this._terrainAtkMul(a, b, ranged) * (0.6 + a.morale / 200) *
-              (a.side === 0 ? this.pfx.atk : 1);
+              (a.side === 0 ? this.pfx.atk : 1) * a.genAtk;
     var loss = dps / (b.def.def * this._terrainDefMul(b) * 1.15) * dt * 0.5;
     b.men -= loss;
     b.morale -= loss / b.maxMen * 150 * (b.militia ? 1.6 : 1);
@@ -653,11 +695,17 @@
   Battle.prototype._shout = function (u, dead) {
     var name = H.UNIT_MAP[u.type].name;
     var side = u.side === 0 ? '我が軍の' : '敵の';
-    H.UI.battleMsg(side + name + (dead ? 'が全滅した!' : 'が崩れ、潰走をはじめた!'));
-    /* 周囲の味方の士気が下がる */
+    if (u.general) {
+      H.UI.battleMsg(side + '【' + u.general.name + '】の隊が' +
+        (dead ? '討ち取られた!' : '崩れた! 全軍が動揺している'));
+    } else {
+      H.UI.battleMsg(side + name + (dead ? 'が全滅した!' : 'が崩れ、潰走をはじめた!'));
+    }
+    /* 周囲の味方の士気が下がる。将を失うと痛手は大きい */
+    var drop = u.general ? 7 + Math.round(u.general.war / 8) : 7;
     for (var i = 0; i < this.units.length; i++) {
       var v = this.units[i];
-      if (v.side === u.side && v !== u && v.state === 'ok') v.morale -= 7;
+      if (v.side === u.side && v !== u && v.state === 'ok') v.morale -= drop;
     }
   };
 
@@ -764,6 +812,32 @@
         }
       }
     }
+    /* 武将を隊の先頭に立てる */
+    var ng = 0;
+    for (i = 0; i < this.units.length; i++) {
+      var gu = this.units[i];
+      if (!gu.general || gu.state === 'gone' || ng >= 16) continue;
+      var gsin = Math.sin(gu.face), gcos = Math.cos(gu.face);
+      var gx = gu.pos.x + gsin * 1.15, gz = gu.pos.z + gcos * 1.15;
+      d.position.set(gx, this.heightAt(gx, gz), gz);
+      d.rotation.set(0, gu.face, 0);
+      var gs = gu.state === 'rout' ? 1.3 : 1.45;
+      d.scale.set(gs, gs, gs);
+      d.updateMatrix();
+      this.genMesh.setMatrixAt(ng, d.matrix);
+      this.bannerMesh.setMatrixAt(ng, d.matrix);
+      var gcol = gu.side === 0 ? SIDE_ACCENT[0] : (this.opts.enemyColor || SIDE_ACCENT[1]);
+      this.bannerMesh.setColorAt(ng, c.setHex(gcol));
+      ng++;
+    }
+    this.genMesh.count = ng;
+    this.bannerMesh.count = ng;
+    if (ng) {
+      this.genMesh.instanceMatrix.needsUpdate = true;
+      this.bannerMesh.instanceMatrix.needsUpdate = true;
+      if (this.bannerMesh.instanceColor) this.bannerMesh.instanceColor.needsUpdate = true;
+    }
+
     this.infMesh.count = ni;
     this.charMesh.count = nc;
     this.cavMesh.count = nv;

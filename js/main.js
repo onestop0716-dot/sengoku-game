@@ -294,7 +294,17 @@
       opts = { siege: false, wallDefense: s.defense, defBonus: 1 + Math.min(0.6, s.defense / 80),
                enemyPower: n.power, enemyColor: n.def.color, nationName: n.def.name };
     }
+    /* 出陣する部隊に将を配し、敵にも将を立てる */
+    var pGens = this.military.assignGenerals(pSquads);
     var eSquads = this.military.enemyArmy(n, pb.kind === 'defense' ? 0.9 : 1);
+    var eGen = this.military.enemyGeneral(n);
+    if (eGen && eSquads.length) {
+      var big = eSquads[0];
+      for (var ei = 1; ei < eSquads.length; ei++) if (eSquads[ei].men > big.men) big = eSquads[ei];
+      big.general = eGen.id;
+    }
+    opts.pGens = pGens;
+    opts.eGen = eGen;
     var info = { kind: pb.kind, nationId: n.id,
                  squadIds: pSquads.map(function (sq) { return sq.id; }) };
 
@@ -313,6 +323,12 @@
     document.body.classList.add('in-battle');
     H.UI.enterBattleHud(this.battle,
       pb.kind === 'attack' ? n.def.name + '征伐の会戦' : n.def.name + 'の侵攻 — 都防衛戦');
+    if (pGens.length) {
+      H.UI.battleMsg('【' + pGens.map(function (g) { return g.name; }).join('・') +
+        '】が兵を率いる' + (eGen ? ' — 敵将は【' + eGen.name + '】' : ''));
+    } else if (eGen) {
+      H.UI.battleMsg('敵将は【' + eGen.name + '】— こちらに将なし、士気で劣る');
+    }
   };
 
   Game.exitBattle = function () {

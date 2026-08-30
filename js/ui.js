@@ -924,13 +924,26 @@
     if (!mil.squads.length) {
       html += '<div class="d-note">常備軍はない。敵が攻めてくれば民兵で戦うことになる。</div>';
     }
+    /* 出陣したとき、どの部隊を誰が率いるか (軍事の高い士から順に) */
+    var gens = (st.persons ? st.persons.hired : []).map(function (h) { return H.PERSON_MAP[h.id]; })
+      .filter(function (p) { return !!p; })
+      .sort(function (a, b) { return b.war - a.war; });
+    if (mil.squads.length) {
+      html += '<div class="d-note">' + (gens.length
+        ? '出陣すれば軍事に秀でた士から順に将となる。将のいる隊は士気と攻めが上がり、崩れれば全軍が動揺する。'
+        : '将となる士がいない。人材を登用すれば部隊を率いさせられる。') + '</div>';
+    }
     var exp = mil.expedition;
-    mil.squads.forEach(function (sq) {
+    mil.squads.forEach(function (sq, si) {
       var u = H.UNIT_MAP[sq.type];
       var away = exp && exp.squadIds.indexOf(sq.id) >= 0;
+      var gen = gens[si] || null;
       html += '<div class="squad-row' + (away ? ' away' : '') + '">' +
         '<label><input type="checkbox" class="sq-pick" data-id="' + sq.id + '"' + (away ? ' disabled' : '') + '> ' +
-        u.name + '</label><span>兵 ' + sq.men + ' / 士気 ' + Math.round(sq.morale) + '</span>' +
+        u.name + '</label>' +
+        (gen ? '<span class="sq-gen">' + H.Portrait.img(gen.id, 26, 33, 'portrait tiny') +
+               '将 ' + gen.name + '</span>' : '<span class="sq-gen none">将なし</span>') +
+        '<span>兵 ' + sq.men + ' / 士気 ' + Math.round(sq.morale) + '</span>' +
         (away ? '<span class="sq-away">遠征中</span>'
               : '<button class="sq-disband" data-id="' + sq.id + '">解散</button>') +
         '</div>';
@@ -1094,6 +1107,11 @@
     $('bt-title').textContent = title;
     $('bt-ename').textContent = battle.opts.nationName + '軍';
     $('bt-wall-row').classList.toggle('hidden', !battle.opts.siege);
+    this._btSelKey = null;
+    var eg = battle.opts.eGen;
+    $('bt-ename').innerHTML = eg
+      ? H.Portrait.img(eg.id, 26, 33, 'portrait tiny bt-egen') + battle.opts.nationName + '軍 ' + eg.name
+      : battle.opts.nationName + '軍';
     this.setBattleSpeed(1);
     this.battleMsg('開戦! 部隊をクリックで選び、地面や敵をクリックして指示を出す (Space:一時停止)');
   };
@@ -1130,10 +1148,23 @@
     if (b.selected && b.selected.state === 'ok') {
       sel.classList.remove('hidden');
       var u2 = b.selected;
-      setText(sel, H.UNIT_MAP[u2.type].name + ' — 兵' + Math.round(u2.men) + '/' + u2.maxMen +
-        ' 士気' + Math.round(u2.morale));
+      var line = H.UNIT_MAP[u2.type].name + ' — 兵' + Math.round(u2.men) + '/' + u2.maxMen +
+        ' 士気' + Math.round(u2.morale);
+      var key = u2.id + '|' + (u2.general ? u2.general.id : '-');
+      if (this._btSelKey !== key) {
+        this._btSelKey = key;
+        sel.innerHTML = u2.general
+          ? H.Portrait.img(u2.general.id, 48, 60, 'portrait tiny') +
+            '<span class="bt-gen"><b>' + u2.general.name + '</b>' +
+            '<i>軍事' + u2.general.war + ' / 攻+' + Math.round((u2.genAtk - 1) * 100) +
+            '% 士気+' + u2.genMorale + '</i></span><span class="bt-selline"></span>'
+          : '<span class="bt-selline"></span>';
+        this._btSelLine = sel.querySelector('.bt-selline');
+      }
+      if (this._btSelLine) setText(this._btSelLine, line);
     } else {
       sel.classList.add('hidden');
+      this._btSelKey = null;
     }
   };
 
@@ -1203,10 +1234,11 @@
       : (offer.kind === 'home' ? '国中の士 ' + p.name + 'が仕官を願い出た'
                                : '諸国を巡る士 ' + p.name + 'が門を叩いた');
     var chk = ps.canHire(offer);
-    var text = head + '。<br><br>' +
+    var text = '<div class="offer-wrap">' + H.Portrait.img(p.id, 170, 212, 'portrait big') +
+      '<div class="offer-body">' + head + '。<br><br>' +
       '<div class="pr-stat">政治 <b>' + p.pol + '</b> / 軍事 <b>' + p.war + '</b> / 外交 <b>' + p.dip + '</b></div>' +
       '<div class="pr-skill">' + sk.name + ' — ' + sk.desc + '</div>' +
-      '<div class="pr-desc">' + p.desc + '</div>' +
+      '<div class="pr-desc">' + p.desc + '</div></div></div>' +
       '<div class="pr-cost">仕度金 貨幣' + offer.cost + ' / 俸禄 貨幣' + p.pay + ' 毎季' +
       (chk.ok ? '' : '<br><span class="pr-no">' + chk.why + '</span>') + '</div>';
     this.showChoice('士の来訪 — ' + p.name, text, [
@@ -1244,14 +1276,16 @@
     ps.hired.forEach(function (h) {
       var p = H.PERSON_MAP[h.id];
       var sk = H.PERSON_SKILLS[p.skill];
-      html += '<div class="person-row">' +
+      html += '<div class="person-row has-face">' +
+        H.Portrait.img(p.id, 84, 105, 'portrait small') +
+        '<div class="pr-main">' +
         '<div class="pr-head"><span class="pr-name">' + p.name + '</span>' +
         '<span class="pr-skill">' + sk.name + '</span>' +
         '<span class="pr-nums">政' + p.pol + ' 軍' + p.war + ' 外' + p.dip + '</span></div>' +
         '<div class="pr-eff">' + sk.desc + '</div>' +
         '<div class="pr-desc">' + p.desc + '</div>' +
         '<div class="pr-foot"><span>俸禄 貨幣' + p.pay + '/季</span>' +
-        '<button data-dismiss="' + p.id + '">退ける</button></div></div>';
+        '<button data-dismiss="' + p.id + '">退ける</button></div></div></div>';
     });
 
     /* --- いまの効き --- */
@@ -1293,7 +1327,8 @@
         (sv && H.NATION_MAP[sv] ? H.NATION_MAP[sv].name : '在野');
       html += '<div class="pchip' + (sv === 'player' ? ' mine' : (sv ? ' taken' : '')) + '" ' +
         'title="' + p.desc.replace(/"/g, '') + '">' +
-        p.name + '<i>' + where + '</i></div>';
+        H.Portrait.img(p.id, 44, 55, 'portrait tiny') +
+        '<span class="pc-name">' + p.name + '<i>' + where + '</i></span></div>';
     });
     html += '</div>';
     var later = H.PERSONS.filter(function (p) { return p.era > st.era; });

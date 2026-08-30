@@ -129,6 +129,38 @@
     return { men: men, pay: pay, food: men * 0.8 };
   };
 
+  /* ---------- 部隊に将を配する ----------
+     軍事に秀でた士から順に、出陣する部隊の将とする */
+  Military.prototype.assignGenerals = function (squads) {
+    var ps = this.state.persons;
+    this.squads.forEach(function (sq) { sq.general = null; });
+    if (!ps || !ps.hired.length) return [];
+    var list = ps.hired.map(function (h) { return H.PERSON_MAP[h.id]; })
+                       .filter(function (p) { return !!p; })
+                       .sort(function (a, b) { return b.war - a.war; });
+    var target = (squads && squads.length) ? squads : this.squads;
+    var n = Math.min(list.length, target.length);
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      target[i].general = list[i].id;
+      out.push(list[i]);
+    }
+    return out;
+  };
+
+  /* 敵国の将 (その国に仕えている士のうち、いちばん軍事が高い者) */
+  Military.prototype.enemyGeneral = function (nation) {
+    var ps = this.state.persons;
+    if (!ps) return null;
+    var best = null;
+    for (var id in ps.serving) {
+      if (ps.serving[id] !== nation.id) continue;
+      var p = H.PERSON_MAP[id];
+      if (p && (!best || p.war > best.war)) best = p;
+    }
+    return best;
+  };
+
   /* 国もとで守りにつける部隊 (遠征中を除く) */
   Military.prototype.homeSquads = function () {
     var exp = this.expedition;
@@ -392,7 +424,9 @@
   Military.prototype.serialize = function () {
     return {
       nextId: this.nextId,
-      squads: this.squads.map(function (s) { return { id: s.id, t: s.type, m: s.men, mo: Math.round(s.morale) }; }),
+      squads: this.squads.map(function (s) {
+        return { id: s.id, t: s.type, m: s.men, mo: Math.round(s.morale), g: s.general || null };
+      }),
       exp: this.expedition, inv: this.invasion, invCd: this._invCd
     };
   };
@@ -401,7 +435,8 @@
     if (!d) return;
     this.nextId = d.nextId || 1;
     this.squads = (d.squads || []).map(function (s) {
-      return { id: s.id, type: s.t, men: s.m, morale: s.mo === undefined ? 100 : s.mo };
+      return { id: s.id, type: s.t, men: s.m, morale: s.mo === undefined ? 100 : s.mo,
+               general: s.g || null };
     });
     this.expedition = d.exp || null;
     this.invasion = d.inv || null;
