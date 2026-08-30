@@ -12,6 +12,11 @@
   --good:#7fbf6a;
   --bad:#d1614f;
   --jade:#6f9e8a;
+  /* 上下のバーの実際の高さ (UI.layout が毎回測って書き込む)。
+     指標の段数・資源の増減・建設カードの折り返し・ほのみモードの文字サイズで
+     バーの高さが変わるため、重なりを防ぐには固定値ではなく実寸で置く */
+  --top-h:74px;
+  --bottom-h:122px;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0a0908;}
@@ -109,7 +114,8 @@ body{
 
 /* ---------- 情報パネル ---------- */
 #infopanel{
-  position:absolute;right:12px;top:70px;width:264px;max-height:calc(100% - 190px);
+  position:absolute;right:12px;top:var(--top-h);width:264px;
+  max-height:calc(100% - var(--top-h) - var(--bottom-h) - 16px);
   overflow-y:auto;padding:12px 14px 14px;
   background:var(--panel);border:1px solid var(--line);
   box-shadow:0 6px 24px rgba(0,0,0,.55);
@@ -133,7 +139,11 @@ body{
 #info-body button:hover{background:rgba(70,28,22,.95);}
 
 /* ---------- ログ ---------- */
-#log{position:absolute;left:14px;bottom:112px;width:290px;display:flex;flex-direction:column-reverse;gap:4px;pointer-events:none;}
+#log{
+  position:absolute;left:14px;bottom:var(--bottom-h);width:290px;
+  max-height:calc(100% - var(--top-h) - var(--bottom-h) - 16px);overflow:hidden;
+  display:flex;flex-direction:column-reverse;gap:4px;pointer-events:none;
+}
 .logline{
   font-size:12px;padding:4px 9px;color:var(--text);
   background:rgba(20,16,12,.85);border-left:2px solid var(--gold-dim);
@@ -145,7 +155,7 @@ body{
 
 /* ---------- ヒント / ツールチップ ---------- */
 #hint{
-  position:absolute;top:64px;left:50%;transform:translateX(-50%);
+  position:absolute;top:var(--top-h);left:50%;transform:translateX(-50%);
   font-size:11.5px;color:#9a8b70;letter-spacing:.08em;
   background:rgba(18,15,11,.6);padding:3px 12px;pointer-events:none;
 }
@@ -246,14 +256,14 @@ body{
 
 /* ---------- 探訪モード: 会話 ---------- */
 #talk-prompt{
-  position:absolute;left:50%;bottom:150px;transform:translateX(-50%);
+  position:absolute;left:50%;bottom:calc(var(--bottom-h) + 44px);transform:translateX(-50%);
   padding:5px 18px;font-size:13px;letter-spacing:.08em;
   color:#1a150e;background:var(--gold);border:1px solid #f0d9a0;
   box-shadow:0 4px 16px rgba(0,0,0,.5);
   pointer-events:none;z-index:22;
 }
 #dialog{
-  position:absolute;left:50%;bottom:120px;transform:translateX(-50%);
+  position:absolute;left:50%;bottom:calc(var(--bottom-h) + 6px);transform:translateX(-50%);
   width:min(560px, 88vw);padding:14px 20px 10px;z-index:23;
   background:rgba(22,17,12,.96);border:1px solid var(--gold-dim);
   box-shadow:0 8px 32px rgba(0,0,0,.6), inset 0 0 0 1px rgba(217,180,106,.12);
@@ -446,7 +456,8 @@ body.in-battle #hint, body.in-battle #talk-prompt { display:none !important; }
 /* --- バトルHUD --- */
 #battle-hud{position:absolute;inset:0;pointer-events:none;}
 #bt-top{
-  position:absolute;top:64px;left:50%;transform:translateX(-50%);
+  position:absolute;top:var(--top-h);left:50%;transform:translateX(-50%);
+  max-width:calc(100% - 28px);flex-wrap:wrap;justify-content:center;
   display:flex;align-items:center;gap:18px;padding:7px 16px;
   background:rgba(20,16,12,.88);border:1px solid rgba(141,113,69,.5);
 }
@@ -459,7 +470,7 @@ body.in-battle #hint, body.in-battle #talk-prompt { display:none !important; }
 #bt-wbar{background:linear-gradient(90deg,#8d7145,#c8b48d) !important;}
 .bt-side span:last-child{min-width:30px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums;}
 #bt-msg{
-  position:absolute;top:112px;left:50%;transform:translateX(-50%);
+  position:absolute;top:calc(var(--top-h) + 48px);left:50%;transform:translateX(-50%);
   font-size:12.5px;color:#ffe9a8;background:rgba(18,15,11,.75);
   padding:4px 14px;transition:opacity .8s;max-width:70%;text-align:center;
 }

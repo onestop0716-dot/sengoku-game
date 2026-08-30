@@ -29,6 +29,35 @@
     return (r > 0 ? '+' : '') + r;
   }
 
+  /* ---------------- 画面の余白の計算 ----------------
+     上下のバーは、指標の段数・資源の種類・建設カードの折り返し・ほのみモードの
+     文字サイズで高さが変わる。ヒント・ログ・情報パネル・会話・戦闘HUDはその実寸に
+     合わせて置き、重ならないようにする */
+  UI.layout = function () {
+    var tb = $('topbar'), bb = $('bottombar');
+    if (!tb || !bb) return;
+    var top = Math.round(tb.getBoundingClientRect().height) + 8;
+    var bottomH = bb.classList.contains('hidden') ||
+                  document.body.classList.contains('in-battle')
+      ? 0 : Math.round(bb.getBoundingClientRect().height);
+    var bottom = bottomH + 10;
+    var root = document.documentElement.style;
+    if (this._topH !== top) { this._topH = top; root.setProperty('--top-h', top + 'px'); }
+    if (this._botH !== bottom) { this._botH = bottom; root.setProperty('--bottom-h', bottom + 'px'); }
+  };
+
+  UI._watchLayout = function () {
+    var self = this;
+    var relayout = function () { self.layout(); };
+    window.addEventListener('resize', relayout);
+    if (window.ResizeObserver) {
+      this._ro = new ResizeObserver(relayout);
+      this._ro.observe($('topbar'));
+      this._ro.observe($('bottombar'));
+    }
+    this.layout();
+  };
+
   /* ---------------- 初期化 ---------------- */
   UI.init = function (game) {
     var self = this;
@@ -100,6 +129,7 @@
     $('btn-kids').onclick = function () {
       var on = H.Kids.toggle();
       self.setKidsButton(on);
+      self.layout();
       self.log(on ? '「ほのみモード」にしたよ。やさしい言葉とふりがなで表示するね'
                   : 'ほのみモードをやめた');
     };
@@ -143,6 +173,8 @@
         self.game.buildRot = (self.game.buildRot + 1) % 4;
       }
     });
+
+    this._watchLayout();
   };
 
   /* ---------------- 資源バー (時代で表示が増える) ---------------- */
@@ -174,6 +206,7 @@
     jd.innerHTML = '<span class="r-name">労働</span><span class="r-val">0</span><span class="r-delta d-zero">職 0</span>';
     rb.appendChild(jd);
     this.jobEl = { val: jd.children[1], delta: jd.children[2] };
+    this.layout();
   };
 
   /* ---------------- 建設リスト ---------------- */
@@ -206,6 +239,7 @@
       list.appendChild(card);
     });
     this.refreshAffordable();
+    this.layout();
   };
 
   /* コストが払えるかを色で示す */
@@ -365,17 +399,9 @@
   };
 
   /* ---------------- 情報パネル ---------------- */
-  /* 上部バーの実際の高さに合わせて配置し、名声などの指標を隠さない */
-  UI._layoutInfo = function () {
-    var tb = $('topbar'), ip = $('infopanel');
-    var top = tb.offsetTop + tb.offsetHeight + 8;
-    ip.style.top = top + 'px';
-    ip.style.maxHeight = 'calc(100% - ' + (top + 130) + 'px)';
-  };
-
   UI.showBuilding = function (b, s) {
     this.infoTarget = { kind: 'building', b: b };
-    this._layoutInfo();
+    this.layout();
     $('infopanel').classList.remove('hidden');
     this.renderBuildingInfo(b, s);
   };
@@ -434,7 +460,7 @@
     var cz = this.game.citizens;
     if (!cz) return;
     this.infoTarget = { kind: 'citizen', c: c };
-    this._layoutInfo();
+    this.layout();
     $('infopanel').classList.remove('hidden');
     var o = H.OCCUPATIONS[c.occ] || H.OCCUPATIONS.idle;
     var label = cz.occLabel(c);
@@ -456,7 +482,7 @@
 
   UI.showTile = function (t, x, z) {
     this.infoTarget = { kind: 'tile' };
-    this._layoutInfo();
+    this.layout();
     $('infopanel').classList.remove('hidden');
     $('info-title').textContent = H.TERRAIN_NAME[t.at(x, z)] + ' (' + x + ', ' + z + ')';
     var wd = t.waterDist[x + z * t.G];
@@ -1066,6 +1092,7 @@
   };
 
   UI.enterBattleHud = function (battle, title) {
+    this.layout();
     $('battle-hud').classList.remove('hidden');
     $('bt-result').classList.add('hidden');
     $('bt-title').textContent = title;
@@ -1077,6 +1104,7 @@
 
   UI.exitBattleHud = function () {
     $('battle-hud').classList.add('hidden');
+    this.layout();
   };
 
   UI.battleMsg = function (text) {
