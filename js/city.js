@@ -200,7 +200,8 @@
      半分ずつ分け合う。こうすると桁が段差なく連なり、ゆるいアーチになる。 */
   var ARCH_STEP = 0.11;      // 岸から1タイル進むごとの持ち上げ
   var ARCH_MAX = 0.62;       // 反りの上限
-  var BANK_MAX = 0.34;       // 岸側で桁を持ち上げる上限
+  var BANK_MAX = 0.34;       // 岸側でタイル端の桁を持ち上げる上限
+  var LAND_DROP = 0.8;       // 取り付け部で土手に合わせられる高低差の上限
 
   City.prototype.refreshBridges = function () {
     var t = this.terrain, G = this.G, i;
@@ -249,7 +250,7 @@
     for (i = 0; i < list.length; i++) {
       var b3 = list[i];
       var mask = this.bridgeMaskAt(b3.tx, b3.tz);
-      var edges = [0, 0, 0, 0];
+      var edges = [0, 0, 0, 0], drops = [0, 0, 0, 0];
       for (var k3 = 0; k3 < 4; k3++) {
         if (!(mask & DIR[k3][2])) continue;
         var ex = b3.tx + DIR[k3][0], ez = b3.tz + DIR[k3][1];
@@ -257,16 +258,21 @@
         if (other) {
           edges[k3] = (other.rise - b3.rise) / 2;              // 橋どうし
         } else if (t.inBounds(ex, ez)) {
-          /* 岸へは、土手の高さまで半分だけすり寄せる */
-          var gap = t.topOf(ex, ez) - (C.WATER_LEVEL + 0.30 + b3.rise);
-          edges[k3] = H.clamp(gap * 0.55, 0, BANK_MAX);
+          /* 岸: 取り付け部が降りる地点の地面を実際に測り、そこへ着地させる */
+          var deckW = C.WATER_LEVEL + 0.30 + b3.rise;
+          var lx = t.worldX(b3.tx) + DIR[k3][0] * 1.55;
+          var lz = t.worldZ(b3.tz) + DIR[k3][1] * 1.55;
+          var landY = Math.max(t.heightAt(lx, lz), C.WATER_LEVEL + 0.02);
+          var gap = landY + 0.06 - deckW;                   // 板の厚みぶん浮かせる
+          edges[k3] = H.clamp(gap * 0.45, -0.14, BANK_MAX);
+          drops[k3] = H.clamp(gap - edges[k3], -LAND_DROP, LAND_DROP);
         }
       }
-      var sig = mask + '|' + edges.join(',') + '|' + b3.landMask;
+      var sig = mask + '|' + edges.join(',') + '|' + drops.join(',') + '|' + b3.landMask;
       if (b3.geoSig === sig) continue;
       b3.geoSig = sig;
       b3.mask = mask;
-      b3.mesh.geometry = H.bridgeGeometry(this.THREE, mask, edges, b3.landMask);
+      b3.mesh.geometry = H.bridgeGeometry(this.THREE, mask, edges, b3.landMask, drops);
       if (b3.mesh.userData.outline) b3.mesh.userData.outline.geometry = b3.mesh.geometry;
     }
   };

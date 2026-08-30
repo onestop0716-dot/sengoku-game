@@ -566,6 +566,7 @@
   var DECK_TOP = -0.32;          // 桁の上面 (ローカル -0.62 が水面)
   var DECK_TH = 0.13;            // 桁の厚み
   var RAIL_H = 0.40;             // 手すりの高さ
+  var APPROACH = 0.62;           // 岸へ乗り上げる取り付け部の長さ (タイル端からの延長)
   var BR = {
     plank: 0x9c7c52, plank2: 0x92734c, beam: 0x6f5436,
     rail: 0xa98757, pile: 0x634d33, stone: 0x8d8a80
@@ -608,33 +609,43 @@
     gb.push(g, color);
   }
 
-  H.bridgeGeometry = function (THREE, mask, edges, landMask) {
+  H.bridgeGeometry = function (THREE, mask, edges, landMask, landDrops) {
     mask = mask || 5;                       // 孤立時はまっすぐな南北の橋
     edges = edges || [0, 0, 0, 0];
-    landMask = landMask || 0;               // 岸に接している向き (橋台を置く)
+    landMask = landMask || 0;               // 岸に接している向き (取り付け部と橋台を置く)
+    landDrops = landDrops || [0, 0, 0, 0];  // 取り付け部の先端で地面に合わせる高さ
     var q = edges.map(function (v) { return Math.round(v * 50) / 50; });
-    var key = (DETAIL ? 'D:' : '') + 'bridge#' + mask + '#' + q.join(',') + '#' + landMask;
+    var ld = landDrops.map(function (v) { return Math.round(v * 25) / 25; });
+    var key = (DETAIL ? 'D:' : '') + 'bridge#' + mask + '#' + q.join(',') +
+              '#' + landMask + '#' + ld.join(',');
     if (cache[key]) return cache[key];
 
     var gb = new GB(THREE);
     var seg = DETAIL ? 10 : 6;
     var i, d;
 
-    /* その向きのタイル境界の高さ (つながっていない側は中央と同じ高さ) */
-    function edgeY(bit) {
-      for (var k = 0; k < 4; k++) if (BDIR[k].bit === bit) return (mask & bit) ? q[k] : 0;
+    function idxOf(bit) {
+      for (var k = 0; k < 4; k++) if (BDIR[k].bit === bit) return k;
       return 0;
     }
-    /* 軸に沿った位置 u (-1..1) での桁の高さ */
+    /* その向きのタイル境界の高さ (つながっていない側は中央と同じ高さ) */
+    function edgeY(bit) { return (mask & bit) ? q[idxOf(bit)] : 0; }
+    /* 取り付け部の先端で地面に合わせる高さ */
+    function dropY(bit) { return (landMask & bit) ? ld[idxOf(bit)] : 0; }
+    /* 軸に沿った位置 u での桁の高さ (|u|>1 は岸へ乗り上げる取り付け部) */
     function deckYAt(axis, u) {
       var a = Math.abs(u);
       if (a <= HALF) return 0;
-      var t = smoothstep((a - HALF) / (1 - HALF));
-      var e = u < 0 ? edgeY(axis === 'z' ? 1 : 8) : edgeY(axis === 'z' ? 4 : 2);
-      return e * t;
+      var bit = u < 0 ? (axis === 'z' ? 1 : 8) : (axis === 'z' ? 4 : 2);
+      if (a <= 1.0) return edgeY(bit) * smoothstep((a - HALF) / (1 - HALF));
+      return edgeY(bit) + dropY(bit) * smoothstep(H.clamp((a - 1.0) / APPROACH, 0, 1));
     }
-    /* その向きに桁がどこまで伸びているか (つながる先=タイル端、行き止まり=中央部の端) */
-    function extent(bit) { return (mask & bit) ? 1.0 : HALF; }
+    /* その向きに桁がどこまで伸びているか
+       (岸=取り付け部の先まで / つながる先=タイル端 / 行き止まり=中央部の端) */
+    function extent(bit) {
+      if (landMask & bit) return 1.0 + APPROACH * 0.88;
+      return (mask & bit) ? 1.0 : HALF;
+    }
 
     /* --- 桁: 中央の平らな板 + つながる向きへ伸びる曲線板 (幅は同じ) --- */
     gb.box(DECK_W, DECK_TH, DECK_W, 0, DECK_TOP - DECK_TH, 0, BR.plank);
@@ -645,6 +656,13 @@
       arm.translate(0, DECK_TOP, HALF);
       arm.rotateY(d.ry);
       gb.push(arm, BR.plank);
+      /* 岸に接する向きは、取り付け部を土手の上まで伸ばして着地させる */
+      if (landMask & d.bit) {
+        var ap = shearedSlab(THREE, DECK_W, DECK_TH, APPROACH, ld[i]);
+        ap.translate(0, DECK_TOP + q[i], 1.0);
+        ap.rotateY(d.ry);
+        gb.push(ap, BR.plank);
+      }
     }
 
     /* --- 板目 (桁のある範囲にだけ渡す横板) --- */
@@ -719,19 +737,20 @@
       beamBetween(gb, THREE, [0.53, -0.75, 0.46], [-0.53, -0.42, 0.46], 0.035, 6, BR.pile);
     }
 
-    /* --- 橋台 (岸に接する辺は石積みで段差を埋め、桁を受ける) --- */
+    /* --- 橋台 (取り付け部の下を石積みで埋め、岸との隙間をなくす) --- */
     for (i = 0; i < 4; i++) {
       d = BDIR[i];
       if (!(landMask & d.bit)) continue;
-      var ab = new THREE.BoxGeometry(DECK_W + 0.14, 2.2, 0.46);
-      ab.translate(0, DECK_TOP + q[i] - DECK_TH - 1.1, 0.86);
+      var ab = shearedSlab(THREE, DECK_W - 0.06, 2.6, APPROACH + 0.42, ld[i]);
+      ab.translate(0, DECK_TOP + q[i] - DECK_TH + 0.01, 0.86);
       ab.rotateY(d.ry);
       gb.push(ab, BR.stone);
-      /* 岸側の親柱 */
-      var kp = [-(DECK_W / 2 - 0.06), DECK_W / 2 - 0.06];
+      /* 取り付け部の先に立てる親柱 */
+      var kp = [-(DECK_W / 2 - 0.07), DECK_W / 2 - 0.07];
+      var kz = 1.0 + APPROACH * 0.86;
       for (var kk = 0; kk < 2; kk++) {
-        var pl = new THREE.CylinderGeometry(0.075, 0.09, RAIL_H + 0.22, seg);
-        pl.translate(kp[kk], DECK_TOP + q[i] + (RAIL_H + 0.22) / 2 - 0.08, 0.9);
+        var pl = new THREE.CylinderGeometry(0.08, 0.095, RAIL_H + 0.26, seg);
+        pl.translate(kp[kk], DECK_TOP + q[i] + ld[i] + (RAIL_H + 0.26) / 2 - 0.1, kz);
         pl.rotateY(d.ry);
         gb.push(pl, BR.beam);
       }
