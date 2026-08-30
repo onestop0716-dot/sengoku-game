@@ -133,6 +133,7 @@
           Math.round(8 - def.aggr * 25 + def.commerce * 10 + (Math.random() - 0.5) * 20),
         relBase: Math.round(8 - def.aggr * 20 + def.commerce * 8),
         allied: false, married: false, tributary: false,
+        subjugated: false,        // プレイヤーに臣従している
         annexedBy: null,
         _demCd: 4 + Math.floor(Math.random() * 4)
       };
@@ -253,10 +254,10 @@
     }
   };
 
-  /* --- AI同士の戦争 --- */
+  /* --- AI同士の戦争 (プレイヤーの従属国は保護される) --- */
   Nations.prototype._wars = function () {
     var st = this.state;
-    var pool = this.others();
+    var pool = this.others().filter(function (n) { return !n.subjugated; });
     if (pool.length < 2) return;
     if (Math.random() > 0.12 + st.era * 0.06) return;
 
@@ -297,10 +298,11 @@
       if (!n.alive || n.isPlayer) continue;
       var base = n.relBase + (st.fame - 30) * 0.25
         + (n.allied ? 25 : 0) + (n.married ? 12 : 0) + (n.tributary ? 20 : 0)
-        + (n.route ? 8 : 0) - n.def.aggr * 12;
+        + (n.subjugated ? 45 : 0) + (n.route ? 8 : 0) - n.def.aggr * 12;
       base = H.clamp(base, -60, 85);
       n.relation = H.clamp(n.relation + (base - n.relation) * 0.12, -100, 100);
       if (n.tributary && n.relation < 0) n.relation = 0;   // 朝貢している間は矛を収める
+      if (n.subjugated && n.relation < 25) n.relation = 25;
     }
   };
 
@@ -342,6 +344,7 @@
     var pool = this.others();
     for (var i = 0; i < pool.length; i++) {
       var n = pool[i];
+      if (n.subjugated) continue;               // 従属国は要求などしてこない
       if (n._demCd > 0) { n._demCd--; continue; }
       if (n.relation < 0 && n.power > pp * 1.1 && n.def.aggr > 0.4 &&
           Math.random() < n.def.aggr * 0.12) {
@@ -551,7 +554,7 @@
         return {
           id: n.id, alive: n.alive, power: Math.round(n.power * 10) / 10,
           rel: Math.round(n.relation), allied: n.allied, married: n.married,
-          tributary: n.tributary, annexedBy: n.annexedBy
+          tributary: n.tributary, sub: n.subjugated, annexedBy: n.annexedBy
         };
       })
     };
@@ -573,6 +576,7 @@
       n.allied = !!rec.allied;
       n.married = !!rec.married;
       n.tributary = !!rec.tributary;
+      n.subjugated = !!rec.sub;
       n.annexedBy = rec.annexedBy || null;
     }
   };

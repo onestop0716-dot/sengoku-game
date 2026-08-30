@@ -49,6 +49,7 @@
       <div id="menu-row">
         <button class="menu-btn" id="btn-gov">内政</button>
         <button class="menu-btn" id="btn-diplo">外交</button>
+        <button class="menu-btn" id="btn-army">軍務</button>
         <button class="menu-btn" id="btn-save">書庫</button>
         <button class="menu-btn" id="btn-quality" title="地形の陰影を滑らかにする表示モードを切り替える">画質</button>
       </div>
@@ -84,6 +85,31 @@
     <div id="dialog-hint">E / クリックで閉じる</div>
   </div>
 
+  <!-- ===== 戦術バトル HUD ===== -->
+  <div id="battle-hud" class="hidden">
+    <div id="bt-top">
+      <div id="bt-title"></div>
+      <div class="bt-side"><span class="bt-label">我が軍</span><div class="bar"><i id="bt-pbar"></i></div><span id="bt-pmen">0</span></div>
+      <div class="bt-side"><span class="bt-label" id="bt-ename">敵軍</span><div class="bar"><i id="bt-ebar"></i></div><span id="bt-emen">0</span></div>
+      <div class="bt-side" id="bt-wall-row"><span class="bt-label">城壁</span><div class="bar"><i id="bt-wbar"></i></div><span id="bt-whp">0</span></div>
+    </div>
+    <div id="bt-msg"></div>
+    <div id="bt-sel" class="hidden"></div>
+    <div id="bt-bottom">
+      <button id="bt-advance">全軍前進</button>
+      <button id="bt-fallback">全軍後退</button>
+      <button id="bt-retreat">退却</button>
+      <span class="bt-gap"></span>
+      <button class="btspd" data-s="0">‖</button>
+      <button class="btspd on" data-s="1">▶</button>
+      <button class="btspd" data-s="2">▶▶</button>
+    </div>
+    <div id="bt-result" class="hidden">
+      <div id="bt-result-body"></div>
+      <button id="bt-leave">戦場を離れる</button>
+    </div>
+  </div>
+
   <!-- ===== 建設ツールチップ ===== -->
   <div id="tooltip" class="hidden"></div>
 </div>
@@ -98,6 +124,8 @@
 <script src="js/state.js"></script>
 <script src="js/nations.js"></script>
 <script src="js/trade.js"></script>
+<script src="js/military.js"></script>
+<script src="js/battle.js"></script>
 <script src="js/agents.js"></script>
 <script src="js/avatar.js"></script>
 <script src="js/save.js"></script>

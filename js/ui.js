@@ -69,10 +69,20 @@
 
     $('info-close').onclick = function () { self.hideInfo(); };
 
-    /* モーダル (内政 / 外交 / 書庫) */
+    /* モーダル (内政 / 外交 / 軍務 / 書庫) */
     $('btn-gov').onclick = function () { self.openGov(); };
     $('btn-diplo').onclick = function () { self.openDiplo(); };
+    $('btn-army').onclick = function () { self.openArmy(); };
     $('btn-save').onclick = function () { self.openSave(); };
+
+    /* バトルHUD */
+    $('bt-advance').onclick = function () { if (self.game.battle) self.game.battle.orderAll('advance'); };
+    $('bt-fallback').onclick = function () { if (self.game.battle) self.game.battle.orderAll('fallback'); };
+    $('bt-retreat').onclick = function () { if (self.game.battle) self.game.battle.retreat(); };
+    $('bt-leave').onclick = function () { self.game.exitBattle(); };
+    Array.prototype.forEach.call(document.querySelectorAll('.btspd'), function (btn) {
+      btn.onclick = function () { self.setBattleSpeed(parseInt(btn.dataset.s, 10)); };
+    });
 
     /* 画質 (ローポリ ⇔ なめらか) */
     $('btn-quality').onclick = function () { self.game.toggleSmooth(); };
@@ -91,6 +101,14 @@
 
     /* キーボード */
     window.addEventListener('keydown', function (e) {
+      /* 戦闘中は戦場の操作に専念する */
+      if (self.game.battle) {
+        if (e.code === 'Space') { e.preventDefault(); self.setBattleSpeed(self.game.battle.speed === 0 ? 1 : 0); }
+        else if (e.code === 'Digit1') self.setBattleSpeed(1);
+        else if (e.code === 'Digit2') self.setBattleSpeed(2);
+        else if (e.code === 'Escape') self.game.battle.select(null);
+        return;
+      }
       if (e.code === 'KeyE' && self.game.walkMode) {
         if (self.game.talkingWith) self.game.endTalk();
         else if (self.game.walkNear) self.game.startTalk(self.game.walkNear);
@@ -520,6 +538,7 @@
 
   /* ---------------- 内政パネル ---------------- */
   UI.openGov = function () {
+    if (this.game.battle) return;
     this._modal = 'gov';
     this.renderGov();
   };
@@ -649,6 +668,7 @@
 
   /* ---------------- 外交パネル ---------------- */
   UI.openDiplo = function () {
+    if (this.game.battle) return;
     this._modal = 'diplo';
     this.renderDiplo();
   };
@@ -710,6 +730,7 @@
       var cur = H.CURRENCIES[n.def.currency];
       var sameCur = n.def.currency === H.playerCurrency(st);
       var badges = '';
+      if (n.subjugated) badges += '<i class="n-badge">従属</i>';
       if (n.allied) badges += '<i class="n-badge">同盟</i>';
       if (n.married) badges += '<i class="n-badge">婚姻</i>';
       if (n.tributary) badges += '<i class="n-badge">朝貢中</i>';
@@ -817,8 +838,301 @@
     }
   };
 
+  /* ---------------- 軍務パネル ---------------- */
+  UI.openArmy = function () {
+    if (this.game.battle) return;
+    this._modal = 'army';
+    this.renderArmy();
+  };
+
+  UI.renderArmy = function () {
+    var self = this, st = this.game.state;
+    var mil = this.game.military, na = this.game.nations;
+    if (!mil) return;
+    var body = this.openModal('軍務 — 富国強兵');
+    var html = '';
+
+    /* --- 統一の進み --- */
+    var pool = na.list.filter(function (n) { return !n.def.royal && !n.isPlayer && (n.alive || n.annexedBy); });
+    var doneN = pool.filter(function (n) { return !n.alive || n.subjugated; }).length;
+    html += '<div class="diplo-self"><span class="d-my">天下統一まで</span>' +
+      '<span><b>' + doneN + '</b> / ' + pool.length + ' 国 (併合または従属)</span>' +
+      (st.unified ? '<span class="d-hegemon">天下統一</span>' : '') + '</div>';
+
+    /* --- 天下図 --- */
+    html += '<h3>天下図</h3><canvas id="world-map" width="640" height="400"></canvas>';
+
+    /* --- 警報 --- */
+    if (mil.invasion) {
+      var inv = na.get(mil.invasion.nationId);
+      html += '<div class="army-alert">' + inv.def.name + 'の軍勢が迫っている! 来季には都で戦になる。守りを固めよ</div>';
+    }
+    if (mil.expedition) {
+      var tg = na.get(mil.expedition.targetId);
+      html += '<div class="army-note">遠征軍が' + (tg ? tg.def.name : '?') + 'へ行軍中 (会戦まで' +
+        mil.expedition.seasonsLeft + '季) <button id="recall-btn">呼び戻す</button></div>';
+    }
+
+    /* --- 常備軍 --- */
+    var s = st.compute();
+    html += '<h3>常備軍</h3>';
+    html += '<div class="d-note">兵力 ' + (s.armyMen || 0) + '人 / 軍威 ' + mil.strengthOf(mil.squads) +
+      ' / 維持: 俸給 貨幣' + (Math.round((s.armyPay || 0) * 10) / 10) + '/季・兵糧 あわ' +
+      (Math.round((s.armyFood || 0) * 10) / 10) + '/季。兵は民から募る (人口が減る)。</div>';
+    if (!mil.squads.length) {
+      html += '<div class="d-note">常備軍はない。敵が攻めてくれば民兵で戦うことになる。</div>';
+    }
+    var exp = mil.expedition;
+    mil.squads.forEach(function (sq) {
+      var u = H.UNIT_MAP[sq.type];
+      var away = exp && exp.squadIds.indexOf(sq.id) >= 0;
+      html += '<div class="squad-row' + (away ? ' away' : '') + '">' +
+        '<label><input type="checkbox" class="sq-pick" data-id="' + sq.id + '"' + (away ? ' disabled' : '') + '> ' +
+        u.name + '</label><span>兵 ' + sq.men + ' / 士気 ' + Math.round(sq.morale) + '</span>' +
+        (away ? '<span class="sq-away">遠征中</span>'
+              : '<button class="sq-disband" data-id="' + sq.id + '">解散</button>') +
+        '</div>';
+    });
+
+    /* --- 出兵 --- */
+    var targets = na.others().filter(function (n) { return !n.subjugated; });
+    var subj = na.others().filter(function (n) { return n.subjugated; });
+    html += '<div class="army-note">出兵: 部隊に印を付け、相手を選んで発する。行軍に2季かかり、兵1人につきあわ' +
+      1.5 + 'の兵糧が要る。開戦すれば関係は地に落ちる。</div>';
+    html += '<div class="launch-row"><select id="war-target">';
+    targets.forEach(function (n) {
+      html += '<option value="' + n.id + '">' + n.def.name + ' (国力' + Math.round(n.power) + ')</option>';
+    });
+    subj.forEach(function (n) {
+      html += '<option value="' + n.id + '">' + n.def.name + ' (従属中・併合を狙う)</option>';
+    });
+    html += '</select><button id="launch-btn">出兵する</button></div>';
+
+    /* --- 徴兵 --- */
+    html += '<h3>徴兵</h3><div class="recruit-grid">';
+    mil.unitList().forEach(function (u) {
+      var chk = mil.canRecruit(u);
+      var cost = Object.keys(u.cost).map(function (k) {
+        return H.RESOURCES.filter(function (r) { return r.key === k; })[0].name + u.cost[k];
+      }).join(' ');
+      html += '<div class="recruit-card">' +
+        '<div class="rc-head"><span class="rc-name">' + u.name + '</span>' +
+        '<span class="rc-stat">攻' + u.atk + ' 防' + u.def +
+        (u.range ? ' 射' + u.range : '') + (u.siege ? ' 攻城' : '') + '</span></div>' +
+        '<div class="rc-desc">' + u.desc + '</div>' +
+        '<div class="rc-foot"><span>' + cost + ' / 兵' + u.men + '人</span>' +
+        '<button data-unit="' + u.id + '"' + (chk.ok ? '' : ' disabled title="' + chk.why + '"') + '>' +
+        (chk.ok ? '編成' : chk.why) + '</button></div></div>';
+    });
+    html += '</div>';
+    var locked = H.UNITS.filter(function (u) { return u.era > st.era; });
+    if (locked.length) {
+      html += '<div class="d-note">この先の時代で解放: ' + locked.map(function (u) {
+        return u.name + '(' + H.ERAS[u.era].name + ')';
+      }).join(' / ') + '</div>';
+    }
+
+    body.innerHTML = html;
+    this.drawWorldMap($('world-map'));
+
+    Array.prototype.forEach.call(body.querySelectorAll('button[data-unit]'), function (btn) {
+      btn.onclick = function () { if (mil.recruit(btn.dataset.unit)) self.renderArmy(); };
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('.sq-disband'), function (btn) {
+      btn.onclick = function () {
+        var sq = mil.squads.filter(function (q) { return q.id === +btn.dataset.id; })[0];
+        if (sq && mil.disband(sq)) self.renderArmy();
+      };
+    });
+    var rc = $('recall-btn');
+    if (rc) rc.onclick = function () { if (mil.recall()) self.renderArmy(); };
+    $('launch-btn').onclick = function () {
+      var id = $('war-target').value;
+      var n = na.get(id);
+      var picked = [];
+      Array.prototype.forEach.call(body.querySelectorAll('.sq-pick:checked'), function (cb) {
+        var sq = mil.squads.filter(function (q) { return q.id === +cb.dataset.id; })[0];
+        if (sq) picked.push(sq);
+      });
+      if (mil.launch(n, picked)) self.closeModal();
+    };
+  };
+
+  /* --- 天下図 (戦略マップ) --- */
+  UI.drawWorldMap = function (cv) {
+    if (!cv) return;
+    var g = cv.getContext('2d');
+    var st = this.game.state, na = this.game.nations, mil = this.game.military;
+    var W = cv.width, Hh = cv.height;
+
+    /* 羊皮紙風の下地と大河 */
+    g.fillStyle = '#2a231a'; g.fillRect(0, 0, W, Hh);
+    g.fillStyle = '#3a3122'; g.fillRect(6, 6, W - 12, Hh - 12);
+    g.strokeStyle = 'rgba(120,150,180,.5)'; g.lineWidth = 7;
+    g.beginPath();
+    g.moveTo(W * 0.12, Hh * 0.28);
+    g.bezierCurveTo(W * 0.4, Hh * 0.18, W * 0.55, Hh * 0.5, W * 0.86, Hh * 0.42);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(W * 0.25, Hh * 0.95);
+    g.bezierCurveTo(W * 0.5, Hh * 0.8, W * 0.7, Hh * 0.9, W * 0.95, Hh * 0.72);
+    g.stroke();
+
+    var self2 = this;
+    function posOf(id) {
+      var p = H.MAP_POS[id] || [0.5, 0.5];
+      return [10 + p[0] * (W - 20), 10 + p[1] * (Hh - 20)];
+    }
+    var myPos = posOf(st.nation || 'zheng');
+
+    /* 遠征の矢印 */
+    if (mil && mil.expedition) {
+      var tp = posOf(mil.expedition.targetId);
+      g.strokeStyle = '#d9b46a'; g.lineWidth = 2;
+      g.setLineDash([6, 5]);
+      g.beginPath(); g.moveTo(myPos[0], myPos[1]); g.lineTo(tp[0], tp[1]); g.stroke();
+      g.setLineDash([]);
+    }
+
+    na.list.forEach(function (n) {
+      if (n.def.later && !n.alive && !n.annexedBy) return;   // 未誕生
+      var p = posOf(n.id);
+      var r = n.def.royal ? 7 : H.clamp(5 + n.power * 0.09, 5, 15);
+      var col = '#' + n.def.color.toString(16).padStart(6, '0');
+      if (n.isPlayer) return;
+      g.beginPath();
+      g.arc(p[0], p[1], r, 0, 6.3);
+      if (!n.alive) {
+        g.fillStyle = 'rgba(90,80,66,.55)'; g.fill();
+        g.strokeStyle = '#6b5638'; g.lineWidth = 1; g.stroke();
+        g.strokeStyle = '#8d7145';
+        g.beginPath(); g.moveTo(p[0] - 4, p[1] - 4); g.lineTo(p[0] + 4, p[1] + 4);
+        g.moveTo(p[0] + 4, p[1] - 4); g.lineTo(p[0] - 4, p[1] + 4); g.stroke();
+      } else {
+        g.fillStyle = col; g.globalAlpha = 0.85; g.fill(); g.globalAlpha = 1;
+        if (n.subjugated) { g.strokeStyle = '#d9b46a'; g.lineWidth = 2.5; g.stroke(); }
+        else { g.strokeStyle = 'rgba(0,0,0,.5)'; g.lineWidth = 1; g.stroke(); }
+      }
+      g.fillStyle = n.alive ? '#e8dcc4' : '#8d8066';
+      g.font = '13px serif';
+      g.textAlign = 'center';
+      g.fillText(n.def.name + (n.subjugated ? '(従属)' : ''), p[0], p[1] + r + 14);
+      if (n.alive && !n.def.royal) {
+        g.fillStyle = '#a9997b'; g.font = '10px serif';
+        g.fillText('' + Math.round(n.power), p[0], p[1] + 3);
+      }
+    });
+
+    /* 自国 */
+    var myName = H.NATION_MAP[st.nation] ? H.NATION_MAP[st.nation].name : '我';
+    g.beginPath();
+    g.arc(myPos[0], myPos[1], 11, 0, 6.3);
+    g.fillStyle = '#c23c2a'; g.fill();
+    g.strokeStyle = '#ffe9a8'; g.lineWidth = 2.5; g.stroke();
+    g.fillStyle = '#ffe9a8'; g.font = 'bold 13px serif';
+    g.fillText(myName, myPos[0], myPos[1] + 4.5);
+    g.fillStyle = '#e8dcc4'; g.font = '12px serif';
+    g.fillText('(我が国)', myPos[0], myPos[1] + 26);
+  };
+
+  /* ---------------- バトルHUD ---------------- */
+  UI.setBattleSpeed = function (v) {
+    var b = this.game.battle;
+    if (!b) return;
+    b.speed = v;
+    Array.prototype.forEach.call(document.querySelectorAll('.btspd'), function (btn) {
+      btn.classList.toggle('on', parseInt(btn.dataset.s, 10) === v);
+    });
+  };
+
+  UI.enterBattleHud = function (battle, title) {
+    $('battle-hud').classList.remove('hidden');
+    $('bt-result').classList.add('hidden');
+    $('bt-title').textContent = title;
+    $('bt-ename').textContent = battle.opts.nationName + '軍';
+    $('bt-wall-row').classList.toggle('hidden', !battle.opts.siege);
+    this.setBattleSpeed(1);
+    this.battleMsg('開戦! 部隊をクリックで選び、地面や敵をクリックして指示を出す (Space:一時停止)');
+  };
+
+  UI.exitBattleHud = function () {
+    $('battle-hud').classList.add('hidden');
+  };
+
+  UI.battleMsg = function (text) {
+    var el = $('bt-msg');
+    el.textContent = text;
+    el.style.opacity = '1';
+    clearTimeout(this._btMsgT);
+    this._btMsgT = setTimeout(function () { el.style.opacity = '0.25'; }, 3500);
+  };
+
+  UI.updateBattleHud = function (b) {
+    var pm = 0, pM = 0, em = 0, eM = 0;
+    for (var i = 0; i < b.units.length; i++) {
+      var u = b.units[i];
+      if (u.side === 0) { pM += u.maxMen; if (u.state !== 'gone') pm += u.men; }
+      else { eM += u.maxMen; if (u.state !== 'gone') em += u.men; }
+    }
+    $('bt-pbar').style.width = (pM ? pm / pM * 100 : 0) + '%';
+    $('bt-pmen').textContent = Math.round(pm);
+    $('bt-ebar').style.width = (eM ? em / eM * 100 : 0) + '%';
+    $('bt-emen').textContent = Math.round(em);
+    if (b.opts.siege) {
+      $('bt-wbar').style.width = (b.wallMaxHp ? Math.max(0, b.wallHp) / b.wallMaxHp * 100 : 0) + '%';
+      $('bt-whp').textContent = b.breached ? '破壊' : Math.round(b.wallHp);
+    }
+    var sel = $('bt-sel');
+    if (b.selected && b.selected.state === 'ok') {
+      sel.classList.remove('hidden');
+      var u2 = b.selected;
+      sel.textContent = H.UNIT_MAP[u2.type].name + ' — 兵' + Math.round(u2.men) + '/' + u2.maxMen +
+        ' 士気' + Math.round(u2.morale);
+    } else {
+      sel.classList.add('hidden');
+    }
+  };
+
+  UI.showBattleResult = function (battle, result) {
+    var body = $('bt-result-body');
+    var pLost = 0, pMax = 0;
+    for (var i = 0; i < battle.units.length; i++) {
+      var u = battle.units[i];
+      if (u.side === 0) { pMax += u.maxMen; }
+    }
+    (result.playerSquads || []).forEach(function (r) { pLost += r.men; });
+    body.innerHTML =
+      '<div class="btr-title">' + (result.win ? '勝 利' : (result.retreated ? '退 却' : '敗 北')) + '</div>' +
+      '<div class="btr-line">' + (result.win
+        ? battle.opts.nationName + '軍を打ち破った!'
+        : (result.retreated ? '軍を退き、損害を抑えた。' : '我が軍は崩れ去った…')) + '</div>' +
+      '<div class="btr-line">敵軍の残存: ' + Math.round(result.enemyRemain * 100) + '%</div>';
+    $('bt-result').classList.remove('hidden');
+  };
+
+  /* ---------------- 勝利と敗北 ---------------- */
+  UI.showVictory = function () {
+    this.showChoice('天 下 統 一',
+      '諸侯はことごとく我が旗のもとに帰し、戦乱の世は終わった。' +
+      'あなたの名は史書に刻まれ、永く語り継がれるだろう。<br><br>' +
+      '(このまま国づくりを続けられる)',
+      [{ label: '天下の主として国づくりを続ける' }]);
+  };
+
+  UI.showGameOver = function (byName) {
+    var self = this;
+    this.showChoice('落 城',
+      byName + 'の軍勢は城門を破り、都は火に包まれた。社稷はここに絶えた…<br><br>' +
+      '国史 (セーブ) から読み戻すか、新たな天地でやり直すことができる。',
+      [
+        { label: '自動保存を読む', fn: function () { self.game.loadGame('auto'); } },
+        { label: '新しい天地で始める', fn: function () { self.game.newGame(); } }
+      ]);
+  };
+
   /* ---------------- 書庫 (セーブ / ロード) ---------------- */
   UI.openSave = function () {
+    if (this.game.battle) return;
     this._modal = 'save';
     this.renderSave();
   };

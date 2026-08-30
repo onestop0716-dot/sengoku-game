@@ -384,3 +384,112 @@ body{
 }
 #continue-btn:hover{border-color:var(--gold);background:rgba(60,48,30,.95);}
 .menu-btn.on{background:var(--gold);color:#1a150e;border-color:var(--gold);}
+
+/* ===== Phase 4: 軍務・戦術バトル ===== */
+#world-map{width:100%;max-width:640px;display:block;border:1px solid rgba(141,113,69,.5);margin:4px 0 8px;}
+.army-alert{
+  padding:7px 10px;margin:8px 0;font-size:12.5px;color:#f0c9be;
+  background:rgba(70,28,22,.8);border:1px solid rgba(209,97,79,.6);
+}
+.army-note{
+  padding:6px 10px;margin:6px 0;font-size:12px;color:#bdae90;
+  background:rgba(32,26,19,.7);border:1px solid rgba(141,113,69,.35);
+}
+.army-note button{
+  margin-left:8px;padding:2px 10px;font-family:inherit;font-size:11.5px;cursor:pointer;
+  color:var(--text);background:rgba(60,46,26,.92);border:1px solid rgba(141,113,69,.5);
+}
+.squad-row{
+  display:flex;align-items:center;gap:10px;padding:5px 10px;margin:4px 0;
+  background:rgba(32,26,19,.75);border:1px solid rgba(141,113,69,.4);font-size:12.5px;
+}
+.squad-row label{display:flex;align-items:center;gap:6px;min-width:100px;color:var(--text);cursor:pointer;}
+.squad-row span{color:#bdae90;font-size:12px;}
+.squad-row .sq-away{color:var(--gold-dim);margin-left:auto;}
+.squad-row .sq-disband{
+  margin-left:auto;padding:2px 10px;font-family:inherit;font-size:11px;cursor:pointer;
+  color:#cf9a8a;background:rgba(40,20,16,.8);border:1px solid rgba(209,97,79,.4);
+}
+.squad-row.away{opacity:.6;}
+.launch-row{display:flex;gap:8px;margin:6px 0;}
+.launch-row select{
+  flex:1;padding:5px 8px;font-family:inherit;font-size:13px;
+  color:var(--text);background:rgba(24,20,15,.9);border:1px solid var(--line-2);
+}
+.launch-row button{
+  padding:5px 18px;font-family:inherit;font-size:13px;cursor:pointer;
+  color:#1a150e;background:var(--gold);border:1px solid var(--gold);
+}
+.recruit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;}
+.recruit-card{
+  padding:8px 10px;background:rgba(32,26,19,.75);border:1px solid rgba(141,113,69,.4);
+}
+.recruit-card .rc-head{display:flex;justify-content:space-between;align-items:baseline;gap:6px;}
+.recruit-card .rc-name{font-size:14px;color:var(--text);}
+.recruit-card .rc-stat{font-size:11px;color:var(--jade);}
+.recruit-card .rc-desc{font-size:11px;color:#8d8066;line-height:1.6;margin:3px 0;min-height:2.8em;}
+.recruit-card .rc-foot{display:flex;justify-content:space-between;align-items:center;gap:6px;}
+.recruit-card .rc-foot span{font-size:11px;color:var(--gold-dim);}
+.recruit-card button{
+  padding:3px 14px;font-family:inherit;font-size:12px;cursor:pointer;
+  color:#1a150e;background:var(--gold);border:1px solid var(--gold);white-space:nowrap;
+}
+.recruit-card button:disabled{
+  color:#7d7364;background:rgba(40,33,24,.9);border-color:rgba(141,113,69,.35);cursor:not-allowed;
+  font-size:10.5px;
+}
+
+/* --- 戦闘中は都のUIを隠す --- */
+body.in-battle #bottombar, body.in-battle #log, body.in-battle #infopanel,
+body.in-battle #hint, body.in-battle #talk-prompt { display:none !important; }
+
+/* --- バトルHUD --- */
+#battle-hud{position:absolute;inset:0;pointer-events:none;}
+#bt-top{
+  position:absolute;top:64px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:18px;padding:7px 16px;
+  background:rgba(20,16,12,.88);border:1px solid rgba(141,113,69,.5);
+}
+#bt-title{font-size:14px;color:var(--gold);letter-spacing:.15em;}
+.bt-side{display:flex;align-items:center;gap:7px;font-size:11.5px;}
+.bt-side .bt-label{color:var(--gold-dim);letter-spacing:.1em;}
+.bt-side .bar{width:110px;height:8px;background:rgba(0,0,0,.55);border:1px solid rgba(141,113,69,.4);}
+.bt-side .bar i{display:block;height:100%;background:linear-gradient(90deg,#8a3b2a,#c96a4a);transition:width .3s;}
+#bt-ebar{background:linear-gradient(90deg,#2a4a8a,#4a7ac9) !important;}
+#bt-wbar{background:linear-gradient(90deg,#8d7145,#c8b48d) !important;}
+.bt-side span:last-child{min-width:30px;text-align:right;color:var(--text);font-variant-numeric:tabular-nums;}
+#bt-msg{
+  position:absolute;top:112px;left:50%;transform:translateX(-50%);
+  font-size:12.5px;color:#ffe9a8;background:rgba(18,15,11,.75);
+  padding:4px 14px;transition:opacity .8s;max-width:70%;text-align:center;
+}
+#bt-sel{
+  position:absolute;bottom:64px;left:50%;transform:translateX(-50%);
+  font-size:12.5px;color:var(--text);background:rgba(20,16,12,.85);
+  padding:4px 14px;border:1px solid rgba(141,113,69,.5);
+}
+#bt-bottom{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+  display:flex;gap:7px;pointer-events:auto;
+}
+#bt-bottom button{
+  padding:7px 16px;font-family:inherit;font-size:13px;cursor:pointer;
+  color:var(--text);background:rgba(38,31,23,.94);border:1px solid rgba(141,113,69,.5);
+}
+#bt-bottom button:hover{border-color:var(--gold);color:var(--gold);}
+#bt-bottom .btspd{width:44px;padding:7px 0;}
+#bt-bottom .btspd.on{background:var(--gold);color:#1a150e;border-color:var(--gold);}
+#bt-retreat{color:#e08070 !important;}
+.bt-gap{width:16px;}
+#bt-result{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  min-width:320px;padding:26px 34px;text-align:center;pointer-events:auto;
+  background:rgba(24,20,15,.96);border:1px solid var(--line-2);
+  box-shadow:0 10px 40px rgba(0,0,0,.7);
+}
+.btr-title{font-size:30px;color:var(--gold);letter-spacing:.35em;margin-bottom:10px;}
+.btr-line{font-size:13px;color:var(--text);line-height:1.9;}
+#bt-leave{
+  margin-top:16px;padding:8px 30px;font-family:inherit;font-size:14px;cursor:pointer;
+  color:#1a150e;background:var(--gold);border:1px solid var(--gold);
+}

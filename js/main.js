@@ -156,21 +156,27 @@
     this.state = new H.State(this.city);
     this.nations = new H.Nations(this.state);
     this.trade = new H.Trade(THREE, this.terrain, this.city, this.state, this.nations, this.scene);
+    this.military = new H.Military(this.state, this.nations);
+    this.state.military = this.military;
     this.state.on(function (ev, data) {
       if (ev === 'log') H.UI.log(data.text, data.kind);
       if (ev === 'season') {
         H.UI.refreshAffordable();
         if (self.citizens) self.citizens.markDirty();
         if (self.trade) self.trade.onSeason();
+        if (self.military) self.military.onSeason();
       }
       if (ev === 'year') {
         if (self.nations) self.nations.onYear();
+        if (self.military) { self.military.onYear(); self.military.tributeIn(); }
         self.autosave();
       }
       if (ev === 'grade') {
         self.city.setGrade(data);
         self.needShadow = true;
       }
+      if (ev === 'victory') H.UI.showVictory();
+      if (ev === 'gameover') H.UI.showGameOver(data);
       if (ev === 'era') {
         H.UI.renderBuildList();
         H.UI.buildResourceBar();
@@ -225,8 +231,90 @@
     if (this.trees) this.scene.add(this.trees);
   };
 
+  /* ---------------- 戦術バトル ---------------- */
+  Game.enterBattle = function () {
+    var pb = this.military.pendingBattle;
+    if (!pb || this.battle) return;
+    var n = this.nations.get(pb.nationId);
+    if (!n) { this.military.pendingBattle = null; return; }
+    if (this.walkMode) this.exitWalk();
+    H.UI.selectBuilding(null);
+    H.UI.setTool('select');
+    H.UI.hideInfo();
+    H.UI.closeModal(true);
+
+    var st = this.state, s = st.compute();
+    var pSquads, opts;
+    if (pb.kind === 'attack') {
+      var exp = this.military.expedition;
+      var ids = exp ? exp.squadIds : [];
+      pSquads = this.military.squads.filter(function (sq) { return ids.indexOf(sq.id) >= 0; });
+      if (!pSquads.length) pSquads = this.military.homeSquads();
+      opts = { siege: true, enemyPower: n.power, enemyColor: n.def.color, nationName: n.def.name };
+    } else {
+      pSquads = this.military.homeSquads();
+      if (!pSquads.length) pSquads = this.military.militia();
+      opts = { siege: false, wallDefense: s.defense, defBonus: 1 + Math.min(0.6, s.defense / 80),
+               enemyPower: n.power, enemyColor: n.def.color, nationName: n.def.name };
+    }
+    var eSquads = this.military.enemyArmy(n, pb.kind === 'defense' ? 0.9 : 1);
+    var info = { kind: pb.kind, nationId: n.id,
+                 squadIds: pSquads.map(function (sq) { return sq.id; }) };
+
+    /* カメラを戦場へ (都の視点は退避) */
+    var c = this.controls;
+    this._savedBattle = {
+      radius: c.radius, theta: c.theta, phi: c.phi, tx: c.target.x, tz: c.target.z,
+      bound: c.bound, minR: c.minR, maxR: c.maxR, speed: st.speed
+    };
+    c.bound = 26; c.minR = 10; c.maxR = 80;
+    c.target.set(0, 0, 0);
+    c.radius = 44; c.phi = 0.82; c.theta = -Math.PI / 2;
+
+    st.speed = 0;                      // 戦の間、都の時は止まる
+    this.battle = new H.Battle(THREE, this, info, pSquads, eSquads, opts, null);
+    document.body.classList.add('in-battle');
+    H.UI.enterBattleHud(this.battle,
+      pb.kind === 'attack' ? n.def.name + '征伐の会戦' : n.def.name + 'の侵攻 — 都防衛戦');
+  };
+
+  Game.exitBattle = function () {
+    var b = this.battle;
+    if (!b) return;
+    var result = b.result || { win: false, playerSquads: [], enemyRemain: 1, retreated: true };
+    var info = b.info;
+    this.battle = null;
+    b.dispose();
+    document.body.classList.remove('in-battle');
+    H.UI.exitBattleHud();
+
+    /* カメラと時間を戻す */
+    var c = this.controls, sv = this._savedBattle;
+    if (sv) {
+      c.bound = sv.bound; c.minR = sv.minR; c.maxR = sv.maxR;
+      c.radius = sv.radius; c.theta = sv.theta; c.phi = sv.phi;
+      c.target.set(sv.tx, 0, sv.tz);
+      this.state.speed = sv.speed || 1;
+    }
+    H.UI.setSpeed(this.state.speed);
+    this.needShadow = true;
+
+    var follow = this.military.resolveBattle(info, result);
+    this.autosave();
+    if (follow && follow.choice) {
+      var n = follow.nation, mil = this.military;
+      H.UI.showChoice(n.def.name + 'は力尽きた',
+        n.def.name + 'の軍は壊滅し、使者が降伏を申し出てきた。この国をいかに処すか。',
+        [
+          { label: '併合する — 領土と富を得る', fn: function () { mil.annex(n); } },
+          { label: '従属させる — 毎年の貢ぎ物と忠誠', fn: function () { mil.subjugate(n); } }
+        ]);
+    }
+  };
+
   /* ---------------- 探訪モード (街に入って民と話す) ---------------- */
   Game.toggleWalk = function () {
+    if (this.battle) return;
     if (this.walkMode) this.exitWalk();
     else this.enterWalk();
   };
@@ -311,6 +399,13 @@
   };
 
   Game.disposeWorld = function () {
+    if (this.battle) {
+      var b = this.battle;
+      this.battle = null;
+      b.dispose();
+      document.body.classList.remove('in-battle');
+      H.UI.exitBattleHud();
+    }
     if (this.walkMode) this.exitWalk();
     var scene = this.scene;
     function drop(obj) {
@@ -393,6 +488,7 @@
     this.nations.deserialize(data.nations);
     this.nations.setPlayer(this.state.nation);
     this.trade.deserialize(data.trade);
+    this.military.deserialize(data.military);
     this.city.setGrade(this.state.buildingGrade());   // 教育水準ぶんの普請を反映
     this.buildTrees();                     // 開墾反映後に木を生やす
     this.citizens = new H.Citizens(THREE, this.terrain, this.city, this.state, this.scene);
@@ -549,6 +645,13 @@
 
   /* ---------------- クリック ---------------- */
   Game.onClick = function () {
+    /* 戦闘中: 戦場への指示 */
+    if (this.battle) {
+      if (this.ndc.x < -1.5) return;
+      this.raycaster.setFromCamera(this.ndc, this.camera);
+      this.battle.onClick(this.raycaster);
+      return;
+    }
     /* 探訪中: 近くの民に話しかける / 会話中は閉じる */
     if (this.walkMode) {
       if (this.talkingWith) this.endTalk();
@@ -669,6 +772,17 @@
     requestAnimationFrame(function () { self.animate(); });
 
     var dt = Math.min(this.clock.getDelta(), 0.1);
+
+    /* 会戦の始まり (行軍の到着 / 侵攻) */
+    if (this.military && this.military.pendingBattle && !this.battle) this.enterBattle();
+
+    /* 戦術バトル中は戦場だけを描く (都の時間は止まる) */
+    if (this.battle) {
+      this.controls.update(dt);
+      this.battle.update(dt);
+      this.renderer.render(this.battle.scene, this.camera);
+      return;
+    }
 
     /* 探訪モード: アバターを動かし、カメラに追わせる */
     if (this.walkMode && this.walk) {

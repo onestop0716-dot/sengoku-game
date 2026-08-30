@@ -25,6 +25,8 @@
     this.hegemon = false;     // 会盟を主催して覇者となったか
     this.edu = 8;             // 教育水準 (0〜100)。学問所などで上がり、普請の質が変わる
     this._grade = 0;          // いまの普請グレード (0..2)
+    this.unified = false;     // 天下統一を果たしたか
+    this.military = null;     // Military への参照 (main が設定)
     this.log = [];
     this.listeners = [];
     this.totalBuilt = 0;
@@ -205,6 +207,16 @@
     });
     s.delta.su -= s.food;
     s.delta.coin += s.tax - s.upkeep;
+
+    /* 常備軍の維持 (兵は民の数に入らないぶん、兵糧と俸給を食う) */
+    if (this.military) {
+      var mt = this.military.totals();
+      s.armyMen = mt.men;
+      s.armyPay = mt.pay;
+      s.armyFood = mt.food;
+      s.delta.su -= mt.food;
+      s.delta.coin -= mt.pay;
+    }
 
     s.moraleTarget = this.moraleTarget(s);
     s.securityNow = H.clamp(B.BASE_SECURITY + s.securityB * 2.2 - this.pop / 45, 0, 100);
@@ -425,7 +437,8 @@
       policies: Object.keys(this.policies),
       unpaid: this.unpaid, totalBuilt: this.totalBuilt,
       nation: this.nation, fame: Math.round(this.fame * 10) / 10,
-      hegemon: this.hegemon, edu: Math.round(this.edu * 10) / 10
+      hegemon: this.hegemon, edu: Math.round(this.edu * 10) / 10,
+      unified: this.unified
     };
   };
 
@@ -443,6 +456,7 @@
     this.hegemon = !!d.hegemon;
     this.edu = d.edu === undefined ? 8 : d.edu;
     this._grade = this.buildingGrade();
+    this.unified = !!d.unified;
   };
 
   H.State = State;
