@@ -403,17 +403,16 @@
     /* 選択モードで住民が描かれているときだけ、民もクリック対象にする */
     var cz = this.citizens;
     var pickCitizen = cz && cz.mesh.count > 0 && !H.UI.selected && H.UI.tool === 'select';
-    if (pickCitizen) { targets.push(cz.mesh); targets.push(cz.bigHead); }
+    if (pickCitizen) { targets.push(cz.mesh); targets.push(cz.headMesh); }
     var hits = this.raycaster.intersectObjects(targets, true);
     var out = { building: null, tile: null, citizen: null };
     for (var i = 0; i < hits.length; i++) {
       var o = hits[i].object;
-      if (!out.citizen && pickCitizen && (o === cz.mesh || o === cz.bigHead) &&
+      if (!out.citizen && pickCitizen && (o === cz.mesh || o === cz.headMesh) &&
           hits[i].instanceId !== undefined && !out.building && !out.tile) {
-        /* bigHead は近接LODの並びなので、位置から本人を探す */
+        /* 衣も頭も roster と同じ並びのインスタンス */
         var id = hits[i].instanceId;
-        if (o === cz.mesh && id < cz.roster.length) out.citizen = cz.roster[id];
-        else if (o === cz.bigHead && cz._near && cz._near[id]) out.citizen = cz._near[id].c;
+        if (id < cz.roster.length) out.citizen = cz.roster[id];
       }
       if (!out.building && o.userData && o.userData.building) out.building = o.userData.building;
       if (!out.tile && o === this.terrainMesh) {

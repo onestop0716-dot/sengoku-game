@@ -10,9 +10,9 @@
 
   var C = H.CONFIG;
 
-  /* ---------- 顔 (近距離LOD) ---------- */
-  var FACE_DIST = 28;    // この距離までカメラが寄ると顔つきの頭に切り替わる
-  var NEAR_MAX = 48;     // 顔を出す住民の上限 (近い順)
+  /* ---------- 顔 ----------
+     頭は全員が髪・まげつきの共通モデル。表情の顔パッチも全員に重ねる
+     (顔はインスタンス化した小さな球面パッチなので、人数ぶんでも軽い) */
   var EXPR = { NORMAL: 0, SMILE: 1, GRIN: 2, SAD: 3, STERN: 4, TIRED: 5 };
   var ATLAS_COLS = 4, ATLAS_ROWS = 2, CELL = 128;
 
@@ -182,13 +182,19 @@
     this.mesh.frustumCulled = false;
     this.scene.add(this.mesh);
 
-    /* 頭 (肌色 + 髷。全員共通の頂点色) */
-    var head = new THREE.SphereGeometry(0.085, 6, 5);
-    head.translate(0, 0.58, 0);
-    var bun = new THREE.SphereGeometry(0.045, 5, 4);
-    bun.translate(0, 0.67, -0.03);
+    /* 頭 (肌の球 + 髪 + まげ)。全員が同じ詳細モデルで、LODによる見た目の混在をなくす */
+    var HEAD_Y = 0.60, HEAD_R = 0.13;
+    var skin = new THREE.SphereGeometry(HEAD_R, 10, 8);
+    skin.translate(0, HEAD_Y, 0);
+    var hair = new THREE.SphereGeometry(HEAD_R + 0.012, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.52);
+    hair.rotateX(-0.42);                       // 後ろへ流して顔を出す
+    hair.translate(0, HEAD_Y + 0.008, -0.012);
+    var bun = new THREE.SphereGeometry(0.055, 6, 5);
+    bun.translate(0, HEAD_Y + 0.125, -0.045);
     var headGeo = H.mergeGeometries(THREE, [
-      { geo: head, color: 0xd9b48c }, { geo: bun, color: 0x2e2620 }
+      { geo: skin, color: 0xd9b48c },
+      { geo: hair, color: 0x2e2620 },
+      { geo: bun, color: 0x2e2620 }
     ]);
     this.headMesh = new THREE.InstancedMesh(headGeo,
       new THREE.MeshLambertMaterial({ vertexColors: true }), MAX);
@@ -202,30 +208,10 @@
     this._color = new THREE.Color();
   };
 
-  /* ---------- 近距離LOD: 大きめの頭 + 表情の顔パッチ ---------- */
+  /* ---------- 表情の顔パッチ (全員ぶん) ---------- */
   Citizens.prototype._buildFaceMeshes = function () {
-    var THREE = this.THREE;
+    var THREE = this.THREE, MAX = C.MAX_AGENTS;
     var HEAD_Y = 0.60, HEAD_R = 0.13;
-
-    /* 大きめの頭 (肌の球 + 髪 + まげ)。遠距離の小さな頭をすっぽり覆い隠す */
-    var skin = new THREE.SphereGeometry(HEAD_R, 10, 8);
-    skin.translate(0, HEAD_Y, 0);
-    var hair = new THREE.SphereGeometry(HEAD_R + 0.012, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.52);
-    hair.rotateX(-0.42);                       // 後ろへ流して顔を出す
-    hair.translate(0, HEAD_Y + 0.008, -0.012);
-    var bun = new THREE.SphereGeometry(0.055, 6, 5);
-    bun.translate(0, HEAD_Y + 0.125, -0.045);
-    var headGeo = H.mergeGeometries(THREE, [
-      { geo: skin, color: 0xd9b48c },
-      { geo: hair, color: 0x2e2620 },
-      { geo: bun, color: 0x2e2620 }
-    ]);
-    this.bigHead = new THREE.InstancedMesh(headGeo,
-      new THREE.MeshLambertMaterial({ vertexColors: true }), NEAR_MAX);
-    this.bigHead.castShadow = false;
-    this.bigHead.count = 0;
-    this.bigHead.frustumCulled = false;
-    this.scene.add(this.bigHead);
 
     /* 顔パッチ: 頭とぴったり同じ曲率の球面の切れ端に表情アトラスを貼る */
     var face = new THREE.SphereGeometry(HEAD_R + 0.004, 8, 8,
@@ -233,7 +219,7 @@
       Math.PI / 2 - 0.58, 1.12);              // 赤道まわりの緯度帯
     face.translate(0, HEAD_Y, 0);
     /* 表情ごとの UV オフセット (per-instance) */
-    this._faceCells = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 2), 2);
+    this._faceCells = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 2), 2);
     this._faceCells.setUsage(THREE.DynamicDrawUsage);
     face.setAttribute('faceCell', this._faceCells);
 
@@ -264,7 +250,7 @@
         '  gl_FragColor = c;\n' +
         '}'
     });
-    this.faceMesh = new THREE.InstancedMesh(face, faceMat, NEAR_MAX);
+    this.faceMesh = new THREE.InstancedMesh(face, faceMat, MAX);
     this.faceMesh.castShadow = false;
     this.faceMesh.count = 0;
     this.faceMesh.frustumCulled = false;
@@ -275,13 +261,10 @@
     this.scene.remove(this.mesh);
     this.scene.remove(this.headMesh);
     if (this.outlineR) { this.scene.remove(this.outlineR); this.scene.remove(this.outlineH); }
-    this.scene.remove(this.bigHead);
     this.scene.remove(this.faceMesh);
-    this.bigHead.geometry.dispose();
     this.faceMesh.geometry.dispose();
     this.faceMesh.material.uniforms.map.value.dispose();
     this.faceMesh.material.dispose();
-    (this._lambertBH || this.bigHead.material).dispose();
     this.mesh.geometry.dispose();
     this.headMesh.geometry.dispose();
     /* トゥーン材質は H.Style と共有なので、自前のランバートだけ破棄する */
@@ -512,7 +495,6 @@
     /* 遠景 LOD: 非表示 */
     if (camRadius > 130) {
       if (this.mesh.count) { this.mesh.count = 0; this.headMesh.count = 0; }
-      this.bigHead.count = 0;
       this.faceMesh.count = 0;
       this._syncOutline();
       this.dayT = (this.dayT + dt / C.DAY_SECONDS) % 1;
@@ -523,6 +505,7 @@
       this.mesh.count = this.roster.length;
       this.headMesh.count = this.roster.length;
     }
+    this.faceMesh.count = this.roster.length;
     this._syncOutline();
 
     this.dayT = (this.dayT + dt / C.DAY_SECONDS) % 1;
@@ -530,7 +513,7 @@
     /* 中景 LOD: 2フレームに1回だけ動かす */
     this._tick++;
     if (camRadius > 70 && (this._tick & 1)) return;
-    if (dt <= 0) { this._updateFaces(camera, camRadius); return; }   // 一時停止中も顔は出す
+    if (dt <= 0) return;   // 一時停止中は前フレームの姿のまま
 
     var speed = 2.3 * dt * (camRadius > 70 ? 2 : 1);
     var dummy = this._dummy;
@@ -550,6 +533,7 @@
         dummy.updateMatrix();
         this.mesh.setMatrixAt(i, dummy.matrix);
         this.headMesh.setMatrixAt(i, dummy.matrix);
+        this._setFace(i, c, dummy.matrix);
         continue;
       }
 
@@ -599,56 +583,20 @@
       dummy.updateMatrix();
       this.mesh.setMatrixAt(i, dummy.matrix);
       this.headMesh.setMatrixAt(i, dummy.matrix);
+      this._setFace(i, c, dummy.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     this.headMesh.instanceMatrix.needsUpdate = true;
-
-    this._updateFaces(camera, camRadius);
+    this.faceMesh.instanceMatrix.needsUpdate = true;
+    this._faceCells.needsUpdate = true;
   };
 
-  /* ---------------- 顔つきの頭 (近距離LOD) ---------------- */
-  Citizens.prototype._updateFaces = function (camera, camRadius) {
-    if (!camera || camRadius > 45 || !this.roster.length) {
-      if (this.bigHead.count) { this.bigHead.count = 0; this.faceMesh.count = 0; }
-      return;
-    }
-    var cp = camera.position;
-    var near = this._near || (this._near = []);
-    near.length = 0;
-    var lim = FACE_DIST * FACE_DIST;
-    for (var i = 0; i < this.roster.length; i++) {
-      var c = this.roster[i];
-      if (c._y === undefined) continue;
-      var dx = c.pos.x - cp.x, dy = c._y - cp.y, dz = c.pos.z - cp.z;
-      var d = dx * dx + dy * dy + dz * dz;
-      if (d < lim) near.push({ c: c, d: d });
-    }
-    if (near.length > NEAR_MAX) {
-      near.sort(function (a, b) { return a.d - b.d; });
-      near.length = NEAR_MAX;
-    }
-
-    var dummy = this._dummy;
-    for (i = 0; i < near.length; i++) {
-      var cz = near[i].c;
-      dummy.position.set(cz.pos.x, cz._y, cz.pos.z);
-      dummy.rotation.set(0, cz.face, 0);
-      var s = (0.9 + cz.rand * 0.2) * (cz.sMul || 1);
-      dummy.scale.set(s, s, s);
-      dummy.updateMatrix();
-      this.bigHead.setMatrixAt(i, dummy.matrix);
-      this.faceMesh.setMatrixAt(i, dummy.matrix);
-      var e = cz.expr || 0;
-      this._faceCells.setXY(i, (e % ATLAS_COLS) / ATLAS_COLS,
-                            ((e / ATLAS_COLS) | 0) === 0 ? 0.5 : 0.0);
-    }
-    this.bigHead.count = near.length;
-    this.faceMesh.count = near.length;
-    if (near.length) {
-      this.bigHead.instanceMatrix.needsUpdate = true;
-      this.faceMesh.instanceMatrix.needsUpdate = true;
-      this._faceCells.needsUpdate = true;
-    }
+  /* 顔パッチを頭と同じ位置に重ね、表情のアトラスセルを選ぶ */
+  Citizens.prototype._setFace = function (i, c, matrix) {
+    this.faceMesh.setMatrixAt(i, matrix);
+    var e = c.expr || 0;
+    this._faceCells.setXY(i, (e % ATLAS_COLS) / ATLAS_COLS,
+                          ((e / ATLAS_COLS) | 0) === 0 ? 0.5 : 0.0);
   };
 
   /* ---------- 民の名前 (常用漢字の庶民風) ---------- */
