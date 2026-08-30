@@ -207,9 +207,10 @@
     if (this.water) { scene.remove(this.water); this.water.geometry.dispose(); }
     this.water = this.smooth ? this.terrain.buildWaterHi(THREE) : this.terrain.buildWater(THREE);
     scene.add(this.water);
-    /* 建物の精緻ジオメトリ */
+    /* 建物と木々の精緻ジオメトリ */
     H.setMeshDetail(this.smooth ? 1 : 0);
     if (this.city) this.city.refreshGeometry();
+    if (this.trees) this.buildTrees();           // 樹形も作り直す
     /* 内部解像度も少し上げる */
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.smooth ? 2.5 : 2));
     this._lookSeason = -1;                 // 季節の色味を塗り直させる

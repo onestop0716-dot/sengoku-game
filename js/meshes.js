@@ -43,7 +43,31 @@
   /* ---------- ディテールレベル ----------
      0 = ローポリ / 1 = 精緻 (瓦の筋・棟・軒などを足す)。画質モードから切り替える */
   var DETAIL = 0;
-  H.setMeshDetail = function (d) { DETAIL = d ? 1 : 0; };
+  H.setMeshDetail = function (d) { DETAIL = d ? 1 : 0; H.MESH_DETAIL = DETAIL; };
+  H.MESH_DETAIL = 0;
+
+  /* 面取りした箱 (精緻モード用)。角が落ちて光を拾い、柔らかく見える */
+  function chamferBox(THREE, w, h, d) {
+    var r = Math.min(0.05, Math.min(w, Math.min(h, d)) * 0.18);
+    var x0 = -w / 2, y0 = -d / 2;
+    var s = new THREE.Shape();
+    s.moveTo(x0 + r, y0);
+    s.lineTo(x0 + w - r, y0);
+    s.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+    s.lineTo(x0 + w, y0 + d - r);
+    s.quadraticCurveTo(x0 + w, y0 + d, x0 + w - r, y0 + d);
+    s.lineTo(x0 + r, y0 + d);
+    s.quadraticCurveTo(x0, y0 + d, x0, y0 + d - r);
+    s.lineTo(x0, y0 + r);
+    s.quadraticCurveTo(x0, y0, x0 + r, y0);
+    var g = new THREE.ExtrudeGeometry(s, {
+      depth: h - 2 * r, bevelEnabled: true,
+      bevelThickness: r, bevelSize: r * 0.9, bevelSegments: 1, curveSegments: 1
+    });
+    g.rotateX(-Math.PI / 2);                     // 押し出し方向を上向きに
+    g.translate(0, -(h / 2 - r), 0);             // BoxGeometry と同じく中心合わせ
+    return g;
+  }
 
   /* 色を明るく/暗くする (瓦の筋などの陰影用) */
   function shade(color, f) {
@@ -58,21 +82,28 @@
   GB.prototype.push = function (geo, color) { this.parts.push({ geo: geo, color: color }); return this; };
 
   GB.prototype.box = function (w, h, d, x, y, z, color, ry) {
-    var g = new this.T.BoxGeometry(w, h, d);
+    var g = (DETAIL && Math.min(w, Math.min(h, d)) >= 0.14)
+      ? chamferBox(this.T, w, h, d)
+      : new this.T.BoxGeometry(w, h, d);
     if (ry) g.rotateY(ry);
     g.translate(x, y + h / 2, z);
     return this.push(g, color);
   };
 
   GB.prototype.cyl = function (rt, rb, h, seg, x, y, z, color, ry) {
-    var g = new this.T.CylinderGeometry(rt, rb, h, seg || 8);
+    seg = seg || 8;
+    if (DETAIL) seg = Math.max(seg, 12);         // 柱などを丸く
+    var g = new this.T.CylinderGeometry(rt, rb, h, seg);
     if (ry) g.rotateY(ry);
     g.translate(x, y + h / 2, z);
     return this.push(g, color);
   };
 
   GB.prototype.cone = function (r, h, seg, x, y, z, color, ry) {
-    var g = new this.T.ConeGeometry(r, h, seg || 4);
+    seg = seg || 4;
+    /* 精緻: 大きな屋根の角錐は丸屋根に (茅葺きが柔らかく見える) */
+    var segD = (DETAIL && r >= 0.4) ? Math.max(seg, 9) : seg;
+    var g = new this.T.ConeGeometry(r, h, segD);
     g.rotateY(ry === undefined ? Math.PI / 4 : ry);
     g.translate(x, y + h / 2, z);
     this.push(g, color);
@@ -80,7 +111,7 @@
     if (DETAIL && r >= 0.4) {
       for (var i = 1; i <= 2; i++) {
         var fr = i / 3;
-        var ring = new this.T.CylinderGeometry(r * (1 - fr) + 0.02, r * (1 - fr) + 0.055, 0.045, seg || 4);
+        var ring = new this.T.CylinderGeometry(r * (1 - fr) + 0.02, r * (1 - fr) + 0.055, 0.045, segD);
         ring.rotateY(ry === undefined ? Math.PI / 4 : ry);
         ring.translate(x, y + h * fr, z);
         this.push(ring, shade(color, 0.82));

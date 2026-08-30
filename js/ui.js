@@ -327,8 +327,17 @@
   };
 
   /* ---------------- 情報パネル ---------------- */
+  /* 上部バーの実際の高さに合わせて配置し、名声などの指標を隠さない */
+  UI._layoutInfo = function () {
+    var tb = $('topbar'), ip = $('infopanel');
+    var top = tb.offsetTop + tb.offsetHeight + 8;
+    ip.style.top = top + 'px';
+    ip.style.maxHeight = 'calc(100% - ' + (top + 130) + 'px)';
+  };
+
   UI.showBuilding = function (b, s) {
     this.infoTarget = { kind: 'building', b: b };
+    this._layoutInfo();
     $('infopanel').classList.remove('hidden');
     this.renderBuildingInfo(b, s);
   };
@@ -387,6 +396,7 @@
     var cz = this.game.citizens;
     if (!cz) return;
     this.infoTarget = { kind: 'citizen', c: c };
+    this._layoutInfo();
     $('infopanel').classList.remove('hidden');
     var o = H.OCCUPATIONS[c.occ] || H.OCCUPATIONS.idle;
     var label = cz.occLabel(c);
@@ -408,6 +418,7 @@
 
   UI.showTile = function (t, x, z) {
     this.infoTarget = { kind: 'tile' };
+    this._layoutInfo();
     $('infopanel').classList.remove('hidden');
     $('info-title').textContent = H.TERRAIN_NAME[t.at(x, z)] + ' (' + x + ', ' + z + ')';
     var wd = t.waterDist[x + z * t.G];

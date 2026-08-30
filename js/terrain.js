@@ -567,14 +567,24 @@
     }
     if (!list.length) return null;
 
-    var trunk = new THREE.CylinderGeometry(0.09, 0.14, 0.9, 5);
+    /* 精緻モードでは幹を丸く、樹冠を二段重ねの円錐にして柔らかい木立にする */
+    var det = H.MESH_DETAIL;
+    var trunk = new THREE.CylinderGeometry(0.09, 0.14, 0.9, det ? 8 : 5);
     trunk.translate(0, 0.45, 0);
-    var crown = new THREE.ConeGeometry(0.62, 1.7, 6);
-    crown.translate(0, 1.7, 0);
-    var geo = H.mergeGeometries(THREE, [
-      { geo: trunk, color: H.COLOR.woodDark },
-      { geo: crown, color: H.COLOR.forest }
-    ]);
+    var parts = [{ geo: trunk, color: H.COLOR.woodDark }];
+    if (det) {
+      var crownA = new THREE.ConeGeometry(0.66, 1.25, 8);
+      crownA.translate(0, 1.35, 0);
+      var crownB = new THREE.ConeGeometry(0.46, 1.05, 8);
+      crownB.translate(0, 2.0, 0);
+      parts.push({ geo: crownA, color: H.COLOR.forest });
+      parts.push({ geo: crownB, color: 0x527049 });
+    } else {
+      var crown = new THREE.ConeGeometry(0.62, 1.7, 6);
+      crown.translate(0, 1.7, 0);
+      parts.push({ geo: crown, color: H.COLOR.forest });
+    }
+    var geo = H.mergeGeometries(THREE, parts);
     var mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     var inst = new THREE.InstancedMesh(geo, mat, list.length);
     inst.castShadow = true;
