@@ -164,7 +164,8 @@
     var y = this.terrain.heightAt(this.pos.x, this.pos.z);
     if (y < H.CONFIG.WATER_LEVEL) {
       var atp = this.terrain.tileAt(this.pos.x, this.pos.z);
-      y = (this.city && this.city.bridgeAt(atp.x, atp.z)) ? H.BRIDGE_Y : H.CONFIG.WATER_LEVEL;
+      var abr = this.city && this.city.bridgeAt(atp.x, atp.z);
+      y = abr ? (abr.deckY || H.BRIDGE_Y) : H.CONFIG.WATER_LEVEL;
     }
     this.y = y;
     var bob = this.moving ? Math.abs(Math.sin(this.walkT)) * 0.05 : 0;

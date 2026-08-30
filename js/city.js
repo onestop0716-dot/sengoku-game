@@ -145,7 +145,7 @@
       this.occupied[x + z * this.G] = mark;
     }
     if (def.id === 'wall' || def.id === 'gate') this.refreshWallsAround(tx, tz, s);
-    if (isBridge) this.refreshBridgesAround(tx, tz, s);
+    if (isBridge) this.refreshBridges();
     return b;
   };
 
@@ -164,7 +164,7 @@
       }
     }
     if (b.id === 'wall' || b.id === 'gate') this.refreshWallsAround(b.tx, b.tz, b.size);
-    if (b.id === 'bridge') this.refreshBridgesAround(b.tx, b.tz, b.size);
+    if (b.id === 'bridge') this.refreshBridges();
     return true;
   };
 
@@ -195,19 +195,79 @@
     return m;
   };
 
-  City.prototype.refreshBridgeAt = function (x, z) {
-    var b = this.bridgeAt(x, z);
-    if (!b) return;
-    var mask = this.bridgeMaskAt(x, z);
-    if (b.mask === mask) return;
-    b.mask = mask;
-    b.mesh.geometry = H.bridgeGeometry(this.THREE, mask);
-    if (b.mesh.userData.outline) b.mesh.userData.outline.geometry = b.mesh.geometry;
-  };
+  /* ---------- 橋の反り (アーチ) と形の作り直し ----------
+     岸からの距離が遠い桁ほど高く持ち上げ、タイル境界では隣と高さを
+     半分ずつ分け合う。こうすると桁が段差なく連なり、ゆるいアーチになる。 */
+  var ARCH_STEP = 0.11;      // 岸から1タイル進むごとの持ち上げ
+  var ARCH_MAX = 0.62;       // 反りの上限
+  var BANK_MAX = 0.34;       // 岸側で桁を持ち上げる上限
 
-  City.prototype.refreshBridgesAround = function (tx, tz, size) {
-    for (var z = tz - 1; z <= tz + size; z++) {
-      for (var x = tx - 1; x <= tx + size; x++) this.refreshBridgeAt(x, z);
+  City.prototype.refreshBridges = function () {
+    var t = this.terrain, G = this.G, i;
+    var list = [];
+    for (i = 0; i < this.buildings.length; i++) {
+      if (this.buildings[i].id === 'bridge') list.push(this.buildings[i]);
+    }
+    if (!list.length) return;
+
+    var byIdx = {};
+    for (i = 0; i < list.length; i++) byIdx[list[i].tx + list[i].tz * G] = list[i];
+    var DIR = [[0, -1, 1], [1, 0, 2], [0, 1, 4], [-1, 0, 8]];
+
+    /* 岸に接する桁を起点に、橋を伝って距離をはかる (両岸から測るので中央が最遠) */
+    var dist = {}, queue = [];
+    for (i = 0; i < list.length; i++) {
+      var b = list[i], landMask = 0;
+      for (var k = 0; k < 4; k++) {
+        var nx = b.tx + DIR[k][0], nz = b.tz + DIR[k][1];
+        if (t.inBounds(nx, nz) && t.at(nx, nz) !== H.T.WATER) landMask |= DIR[k][2];
+      }
+      b.landMask = landMask;
+      if (landMask) { dist[b.tx + b.tz * G] = 1; queue.push(b); }
+    }
+    for (var qi = 0; qi < queue.length; qi++) {
+      var cur = queue[qi], d0 = dist[cur.tx + cur.tz * G];
+      for (var k2 = 0; k2 < 4; k2++) {
+        var mx = cur.tx + DIR[k2][0], mz = cur.tz + DIR[k2][1];
+        var nb = byIdx[mx + mz * G];
+        if (!nb || dist[mx + mz * G] !== undefined) continue;
+        dist[mx + mz * G] = d0 + 1;
+        queue.push(nb);
+      }
+    }
+
+    /* 反りを決める */
+    for (i = 0; i < list.length; i++) {
+      var b2 = list[i];
+      var d = dist[b2.tx + b2.tz * G] || 1;
+      b2.rise = Math.min(ARCH_MAX, (d - 1) * ARCH_STEP);
+      b2.deckY = H.BRIDGE_Y + b2.rise;
+      b2.mesh.position.y = C.WATER_LEVEL + 0.62 + b2.rise;
+    }
+
+    /* 境界の高さを隣と分け合い、形を作り直す */
+    for (i = 0; i < list.length; i++) {
+      var b3 = list[i];
+      var mask = this.bridgeMaskAt(b3.tx, b3.tz);
+      var edges = [0, 0, 0, 0];
+      for (var k3 = 0; k3 < 4; k3++) {
+        if (!(mask & DIR[k3][2])) continue;
+        var ex = b3.tx + DIR[k3][0], ez = b3.tz + DIR[k3][1];
+        var other = byIdx[ex + ez * G];
+        if (other) {
+          edges[k3] = (other.rise - b3.rise) / 2;              // 橋どうし
+        } else if (t.inBounds(ex, ez)) {
+          /* 岸へは、土手の高さまで半分だけすり寄せる */
+          var gap = t.topOf(ex, ez) - (C.WATER_LEVEL + 0.30 + b3.rise);
+          edges[k3] = H.clamp(gap * 0.55, 0, BANK_MAX);
+        }
+      }
+      var sig = mask + '|' + edges.join(',') + '|' + b3.landMask;
+      if (b3.geoSig === sig) continue;
+      b3.geoSig = sig;
+      b3.mask = mask;
+      b3.mesh.geometry = H.bridgeGeometry(this.THREE, mask, edges, b3.landMask);
+      if (b3.mesh.userData.outline) b3.mesh.userData.outline.geometry = b3.mesh.geometry;
     }
   };
 
@@ -308,11 +368,7 @@
       if (def) this.place(def, rec.tx, rec.tz, rec.r || 0);   // 森は既に開墾済みなので二重計上しない
     }
     this._loading = false;
-    /* 置き終わってから橋の形をつなぎ直す */
-    for (i = 0; i < this.buildings.length; i++) {
-      var bb = this.buildings[i];
-      if (bb.id === 'bridge') this.refreshBridgeAt(bb.tx, bb.tz);
-    }
+    this.refreshBridges();      // 置き終わってから橋の反りと形をつなぎ直す
   };
 
   City.CLEAR_WOOD = CLEAR_WOOD;

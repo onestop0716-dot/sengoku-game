@@ -556,65 +556,172 @@
   };
 
   /* ---------- 橋 ----------
-     mask: 1=北 2=東 4=南 8=西 につながる。
-     つながる向きへ板を伸ばし、つながらない辺には欄干を立てる。
-     置かれる高さは水面基準 (city.place がY座標を決める)。            */
-  var DECK_Y = -0.44, DECK_H = 0.12;      // 板 (ローカル -0.62 が水面)
-  H.bridgeGeometry = function (THREE, mask) {
-    mask = mask || 5;                     // 孤立時はまっすぐな南北の橋
-    var key = (DETAIL ? 'D:' : '') + 'bridge#' + mask;
+     mask : 1=北 2=東 4=南 8=西 につながる
+     edges: 各向きのタイル境界での桁の高さ (中央を0とした相対値)。
+            隣の橋と半分ずつ分け合うので、連ねるとなめらかなアーチになる。
+     置かれる高さは水面基準 (city が桁の反りぶんを足してY座標を決める)。 */
+  var DECK_TOP = -0.32;      // 桁の上面 (ローカル -0.62 が水面)
+  var DECK_TH = 0.13;        // 桁の厚み
+  var DECK_W = 1.34;         // 桁の幅
+  var HALF = 0.42;           // 平らな中央部の半径 (これより外は隣へ向かう傾斜)
+  var RAIL_H = 0.40;         // 手すりの高さ
+  var BR = {
+    plank: 0x9c7c52, plank2: 0x8e7049, beam: 0x6f5436,
+    rail: 0xa98757, pile: 0x634d33, stone: 0x8d8a80
+  };
+  /* 北・東・南・西 (+Zを基準の向きとして、ry だけ回す) */
+  var BDIR = [
+    { bit: 1, ax: 'z', sgn: -1, ry: Math.PI },
+    { bit: 2, ax: 'x', sgn: 1, ry: Math.PI / 2 },
+    { bit: 4, ax: 'z', sgn: 1, ry: 0 },
+    { bit: 8, ax: 'x', sgn: -1, ry: -Math.PI / 2 }
+  ];
+
+  /* 先へ行くほど y がずれる板 (+Z 方向へ len 伸びる。上面は y=0 から dyFar へ) */
+  function shearedSlab(THREE, w, th, len, dyFar) {
+    var g = new THREE.BoxGeometry(w, th, len, 1, 1, 3);
+    g.translate(0, -th / 2, len / 2);
+    var pos = g.attributes.position;
+    for (var i = 0; i < pos.count; i++) {
+      var t = H.clamp(pos.getZ(i) / len, 0, 1);
+      pos.setY(i, pos.getY(i) + dyFar * t);
+    }
+    pos.needsUpdate = true;
+    g.computeVertexNormals();
+    return g;
+  }
+
+  /* 2点を結ぶ丸材 (手すり・杭・筋交いに使う) */
+  function beamBetween(gb, THREE, a, b, r, seg, color) {
+    var dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 0.001) return;
+    var g = new THREE.CylinderGeometry(r, r, len, seg);
+    var q = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / len, dy / len, dz / len));
+    g.applyQuaternion(q);
+    g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    gb.push(g, color);
+  }
+
+  H.bridgeGeometry = function (THREE, mask, edges, landMask) {
+    mask = mask || 5;                       // 孤立時はまっすぐな南北の橋
+    edges = edges || [0, 0, 0, 0];
+    landMask = landMask || 0;               // 岸に接している向き (橋台を置く)
+    var q = edges.map(function (v) { return Math.round(v * 50) / 50; });
+    var key = (DETAIL ? 'D:' : '') + 'bridge#' + mask + '#' + q.join(',') + '#' + landMask;
     if (cache[key]) return cache[key];
+
     var gb = new GB(THREE);
-    var PLANK = 0x8a6a45, BEAM = CO.woodDark, RAIL = 0x9c7a4e;
+    var seg = DETAIL ? 10 : 6;
+    var i, d;
 
-    /* 板 (中央 + つながる向きへの腕) */
-    gb.box(1.24, DECK_H, 1.24, 0, DECK_Y, 0, PLANK);
-    if (mask & 1) gb.box(1.24, DECK_H, 1.05, 0, DECK_Y, -0.5, PLANK);
-    if (mask & 2) gb.box(1.05, DECK_H, 1.24, 0.5, DECK_Y, 0, PLANK);
-    if (mask & 4) gb.box(1.24, DECK_H, 1.05, 0, DECK_Y, 0.5, PLANK);
-    if (mask & 8) gb.box(1.05, DECK_H, 1.24, -0.5, DECK_Y, 0, PLANK);
+    /* --- 桁 (中央の平らな板 + つながる向きへ伸びる傾斜板) --- */
+    gb.box(HALF * 2 + 0.04, DECK_TH, HALF * 2 + 0.04, 0, DECK_TOP - DECK_TH, 0, BR.plank2);
+    for (i = 0; i < 4; i++) {
+      d = BDIR[i];
+      if (!(mask & d.bit)) continue;
+      var arm = shearedSlab(THREE, DECK_W, DECK_TH, 1.0 - HALF, q[i]);
+      arm.translate(0, DECK_TOP, HALF);
+      arm.rotateY(d.ry);
+      gb.push(arm, BR.plank);
+    }
 
-    /* 板目 (精緻モードのときだけ細い横木を並べる) */
+    /* その向きのタイル境界の高さ (つながっていない側は中央と同じ高さ) */
+    function edgeY(bit) {
+      for (var k = 0; k < 4; k++) if (BDIR[k].bit === bit) return (mask & bit) ? q[k] : 0;
+      return 0;
+    }
+    /* 軸に沿った位置 u (-1..1) での桁の高さ */
+    function deckYAt(axis, u) {
+      var eNeg = edgeY(axis === 'z' ? 1 : 8);      // -Z=北 / -X=西
+      var ePos = edgeY(axis === 'z' ? 4 : 2);      // +Z=南 / +X=東
+      var a = Math.abs(u);
+      if (a <= HALF) return 0;
+      var t = (a - HALF) / (1 - HALF);
+      return (u < 0 ? eNeg : ePos) * t;
+    }
+
+    /* --- 板目 (桁の上に渡した横板) --- */
+    var along = (mask & 1) || (mask & 4) ? 'z' : 'x';
+    var step = DETAIL ? 0.2 : 0.34;
+    for (var u = -0.94; u <= 0.94; u += step) {
+      var py = DECK_TOP + deckYAt(along, u) + 0.012;
+      var pc = (Math.round(u * 10) % 2) ? BR.plank2 : BR.plank;
+      if (along === 'z') gb.box(DECK_W - 0.04, 0.028, step * 0.86, 0, py, u, pc);
+      else gb.box(step * 0.86, 0.028, DECK_W - 0.04, u, py, 0, pc);
+    }
+
+    /* --- 欄干 (つながらない辺に、桁の反りに沿った丸い手すり) --- */
+    function railSide(d2) {
+      var axis = d2.ax === 'x' ? 'z' : 'x';        // 手すりが伸びる向き
+      var off = d2.sgn * (DECK_W / 2 - 0.06);
+      function pt(u, h) {
+        var y = DECK_TOP + deckYAt(axis, u) + h;
+        return axis === 'z' ? [off, y, u] : [u, y, off];
+      }
+      /* 手すり (中央で折れる2本の丸材) */
+      beamBetween(gb, THREE, pt(-1.0, RAIL_H), pt(0, RAIL_H), 0.045, seg, BR.rail);
+      beamBetween(gb, THREE, pt(0, RAIL_H), pt(1.0, RAIL_H), 0.045, seg, BR.rail);
+      if (DETAIL) {                                 // 中桟
+        beamBetween(gb, THREE, pt(-1.0, RAIL_H * 0.5), pt(0, RAIL_H * 0.5), 0.03, seg, BR.rail);
+        beamBetween(gb, THREE, pt(0, RAIL_H * 0.5), pt(1.0, RAIL_H * 0.5), 0.03, seg, BR.rail);
+      }
+      /* 支柱 */
+      var posts = DETAIL ? [-0.9, -0.45, 0, 0.45, 0.9] : [-0.85, 0, 0.85];
+      for (var k = 0; k < posts.length; k++) {
+        beamBetween(gb, THREE, pt(posts[k], -DECK_TH), pt(posts[k], RAIL_H + 0.03),
+                    0.045, seg, BR.beam);
+      }
+    }
+    for (i = 0; i < 4; i++) if (!(mask & BDIR[i].bit)) railSide(BDIR[i]);
+
+    /* --- 水に打ち込んだ杭と筋交い --- */
+    var pilePos = [[-0.46, -0.46], [0.46, -0.46], [-0.46, 0.46], [0.46, 0.46]];
+    for (i = 0; i < pilePos.length; i++) {
+      var px = pilePos[i][0], pz = pilePos[i][1];
+      var top = DECK_TOP - DECK_TH + 0.02;
+      /* 少し内側へ傾けて打つと、より橋脚らしく見える */
+      beamBetween(gb, THREE, [px * 1.16, -2.0, pz * 1.16], [px, top, pz],
+                  DETAIL ? 0.085 : 0.09, seg, BR.pile);
+    }
+    /* 桁を支える梁 */
+    gb.box(DECK_W + 0.06, 0.09, 0.14, 0, DECK_TOP - DECK_TH - 0.09, -0.46, BR.beam);
+    gb.box(DECK_W + 0.06, 0.09, 0.14, 0, DECK_TOP - DECK_TH - 0.09, 0.46, BR.beam);
     if (DETAIL) {
-      var along = (mask & 1) || (mask & 4);
-      for (var t2 = -0.75; t2 <= 0.75; t2 += 0.3) {
-        if (along) gb.box(1.2, 0.03, 0.1, 0, DECK_Y + DECK_H, t2, BEAM);
-        else gb.box(0.1, 0.03, 1.2, t2, DECK_Y + DECK_H, 0, BEAM);
+      beamBetween(gb, THREE, [-0.53, -0.75, -0.46], [0.53, -0.42, -0.46], 0.035, 6, BR.pile);
+      beamBetween(gb, THREE, [0.53, -0.75, -0.46], [-0.53, -0.42, -0.46], 0.035, 6, BR.pile);
+      beamBetween(gb, THREE, [-0.53, -0.75, 0.46], [0.53, -0.42, 0.46], 0.035, 6, BR.pile);
+      beamBetween(gb, THREE, [0.53, -0.75, 0.46], [-0.53, -0.42, 0.46], 0.035, 6, BR.pile);
+    }
+
+    /* --- 橋台 (岸に接する辺は石積みで段差を埋め、桁を受ける) --- */
+    for (i = 0; i < 4; i++) {
+      d = BDIR[i];
+      if (!(landMask & d.bit)) continue;
+      var ab = new THREE.BoxGeometry(DECK_W + 0.14, 2.2, 0.46);
+      ab.translate(0, DECK_TOP + q[i] - DECK_TH - 1.1, 0.86);
+      ab.rotateY(d.ry);
+      gb.push(ab, BR.stone);
+      /* 岸側の親柱 */
+      var kp = [[-(DECK_W / 2 - 0.06), 0.9], [DECK_W / 2 - 0.06, 0.9]];
+      for (var kk = 0; kk < 2; kk++) {
+        var pl = new THREE.CylinderGeometry(0.075, 0.09, RAIL_H + 0.22, seg);
+        pl.translate(kp[kk][0], DECK_TOP + q[i] + (RAIL_H + 0.22) / 2 - 0.08, kp[kk][1]);
+        pl.rotateY(d.ry);
+        gb.push(pl, BR.beam);
       }
     }
 
-    /* 欄干 — つながらない辺に手すりと柱を立てる */
-    function rail(dx, dz) {
-      var rx = dx * 0.58, rz = dz * 0.58;
-      if (dz) {
-        gb.box(1.3, 0.07, 0.07, 0, DECK_Y + 0.36, rz, RAIL);
-        gb.box(0.08, 0.34, 0.08, -0.55, DECK_Y + DECK_H, rz, BEAM);
-        gb.box(0.08, 0.34, 0.08, 0.55, DECK_Y + DECK_H, rz, BEAM);
-      } else {
-        gb.box(0.07, 0.07, 1.3, rx, DECK_Y + 0.36, 0, RAIL);
-        gb.box(0.08, 0.34, 0.08, rx, DECK_Y + DECK_H, -0.55, BEAM);
-        gb.box(0.08, 0.34, 0.08, rx, DECK_Y + DECK_H, 0.55, BEAM);
-      }
-    }
-    if (!(mask & 1)) rail(0, -1);
-    if (!(mask & 2)) rail(1, 0);
-    if (!(mask & 4)) rail(0, 1);
-    if (!(mask & 8)) rail(-1, 0);
-
-    /* 水に打ち込んだ杭 */
-    var pil = [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]];
-    for (var i = 0; i < pil.length; i++) {
-      gb.cyl(0.075, 0.09, 1.5, DETAIL ? 8 : 5, pil[i][0], -1.94, pil[i][1], BEAM);
-    }
     cache[key] = gb.build();
     return cache[key];
   };
 
   /* 建設メニューの見本などで buildingGeometry('bridge') が呼ばれたときの形 */
   FACTORY.bridge = function (gb) {
-    gb.box(1.24, DECK_H, 2.05, 0, DECK_Y, 0, 0x8a6a45);
-    gb.box(0.07, 0.07, 2.0, -0.58, DECK_Y + 0.36, 0, 0x9c7a4e);
-    gb.box(0.07, 0.07, 2.0, 0.58, DECK_Y + 0.36, 0, 0x9c7a4e);
+    gb.box(1.3, DECK_TH, 2.05, 0, DECK_TOP - DECK_TH, 0, BR.plank);
+    gb.box(0.07, 0.07, 2.0, -0.6, DECK_TOP + RAIL_H, 0, BR.rail);
+    gb.box(0.07, 0.07, 2.0, 0.6, DECK_TOP + RAIL_H, 0, BR.rail);
   };
 
   /* ---------- キャッシュ ----------

@@ -351,7 +351,8 @@
         var y = t.heightAt(c.pos.x, c.pos.z);
         if (y < H.CONFIG.WATER_LEVEL) {
           var tp = t.tileAt(c.pos.x, c.pos.z);      // 橋の上なら板の高さを歩く
-          y = this.city.bridgeAt(tp.x, tp.z) ? H.BRIDGE_Y : H.CONFIG.WATER_LEVEL;
+          var br = this.city.bridgeAt(tp.x, tp.z);
+          y = br ? (br.deckY || H.BRIDGE_Y) : H.CONFIG.WATER_LEVEL;
         }
         dummy.position.set(c.pos.x, y + 0.62, c.pos.z);
         dummy.rotation.set(0, c.face, 0);
