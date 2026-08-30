@@ -350,9 +350,8 @@
       if (idx < MAX_CARAVANS) {
         var y = t.heightAt(c.pos.x, c.pos.z);
         if (y < H.CONFIG.WATER_LEVEL) {
-          var tp = t.tileAt(c.pos.x, c.pos.z);      // 橋の上なら板の高さを歩く
-          var br = this.city.bridgeAt(tp.x, tp.z);
-          y = br ? (br.deckY || H.BRIDGE_Y) : H.CONFIG.WATER_LEVEL;
+          var by = this.city.bridgeDeckYAt(c.pos.x, c.pos.z);   // 橋の上なら板の高さ
+          y = (by === null) ? H.CONFIG.WATER_LEVEL : by;
         }
         dummy.position.set(c.pos.x, y + 0.62, c.pos.z);
         dummy.rotation.set(0, c.face, 0);

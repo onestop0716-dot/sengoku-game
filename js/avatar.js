@@ -131,7 +131,8 @@
     var tp = t.tileAt(wx, wz);
     if (!t.inBounds(tp.x, tp.z)) return false;
     if (t.at(tp.x, tp.z) !== H.T.WATER) return true;
-    return !!(this.city && this.city.bridgeAt(tp.x, tp.z));   // 橋の上は渡れる
+    /* 橋の上は渡れる。ただし欄干の内側 (桁の上) だけ */
+    return !!(this.city && this.city.onBridgeDeck(wx, wz));
   };
 
   /* keys: Controls が集めている押下状態 / camTheta: カメラの方位角 */
@@ -162,11 +163,9 @@
 
   Avatar.prototype._place = function () {
     var y = this.terrain.heightAt(this.pos.x, this.pos.z);
-    if (y < H.CONFIG.WATER_LEVEL) {
-      var atp = this.terrain.tileAt(this.pos.x, this.pos.z);
-      var abr = this.city && this.city.bridgeAt(atp.x, atp.z);
-      y = abr ? (abr.deckY || H.BRIDGE_Y) : H.CONFIG.WATER_LEVEL;
-    }
+    var deck = this.city ? this.city.bridgeDeckYAt(this.pos.x, this.pos.z) : null;
+    if (deck !== null && deck !== undefined) y = deck;      // 橋の上は板の高さ (反りに沿う)
+    else if (y < H.CONFIG.WATER_LEVEL) y = H.CONFIG.WATER_LEVEL;
     this.y = y;
     var bob = this.moving ? Math.abs(Math.sin(this.walkT)) * 0.05 : 0;
     this.group.position.set(this.pos.x, y + bob, this.pos.z);

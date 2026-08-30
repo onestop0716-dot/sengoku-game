@@ -277,6 +277,53 @@
     }
   };
 
+  /* ---------- 橋の上を歩ける範囲と高さ ----------
+     橋タイルは2.0幅だが桁は1.34幅しかない。欄干の外へ出られないよう、
+     桁 (中央部 + つながる向きへの腕) の内側だけを歩けることにする。 */
+  City.prototype.onBridgeDeck = function (wx, wz) {
+    var t = this.terrain;
+    var tp = t.tileAt(wx, wz);
+    var b = this.bridgeAt(tp.x, tp.z);
+    if (!b) return false;
+    var mask = b.mask === undefined ? 15 : b.mask;
+    var half = t.TILE / 2;
+    var u = (wx - t.worldX(tp.x)) / half;      // -1..1
+    var v = (wz - t.worldZ(tp.z)) / half;
+    var W = ((H.BRIDGE_DECK_W || 1.34) / 2) - 0.22;   // 欄干のぶん内側に寄せる
+    if (Math.abs(u) <= W && Math.abs(v) <= W) return true;         // 中央
+    if (Math.abs(u) <= W) {                                         // 南北の腕
+      if (v < 0 && (mask & 1)) return true;
+      if (v > 0 && (mask & 4)) return true;
+    }
+    if (Math.abs(v) <= W) {                                         // 東西の腕
+      if (u < 0 && (mask & 8)) return true;
+      if (u > 0 && (mask & 2)) return true;
+    }
+    return false;
+  };
+
+  /* 桁の反りに沿った足元の高さ (タイルの境で隣と半分ずつ分け合う) */
+  City.prototype.bridgeDeckYAt = function (wx, wz) {
+    var t = this.terrain;
+    var tp = t.tileAt(wx, wz);
+    var b = this.bridgeAt(tp.x, tp.z);
+    if (!b) return null;
+    var self = this;
+    var HW = (H.BRIDGE_DECK_W || 1.34) / 2;
+    var y = (b.deckY === undefined) ? H.BRIDGE_Y : b.deckY;
+    function blend(w, dx, dz) {
+      var a = Math.abs(w);
+      if (a <= HW) return 0;
+      var nb = self.bridgeAt(tp.x + (w < 0 ? -dx : dx), tp.z + (w < 0 ? -dz : dz));
+      if (!nb || nb.deckY === undefined) return 0;
+      var s = (a - HW) / (1 - HW);
+      return (nb.deckY - y) / 2 * (s * s * (3 - 2 * s));
+    }
+    var half = t.TILE / 2;
+    return y + blend((wx - t.worldX(tp.x)) / half, 1, 0)
+             + blend((wz - t.worldZ(tp.z)) / half, 0, 1);
+  };
+
   /* 歩いて渡れるか (水は橋があるときだけ通れる) */
   City.prototype.passableIdx = function (idx) {
     if (this.terrain.tile[idx] !== H.T.WATER) return true;
