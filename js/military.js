@@ -34,11 +34,11 @@
       desc: '胡服騎射。速さで側面へ回り、弓兵や弩兵を蹂躙する。' },
     { id: 'ram', name: '衝車', era: 3, men: 10,
       cost: { wood: 45, coin: 35 }, upkeep: 0.25,
-      atk: 4, def: 8, range: 0, speed: 1.2, siege: 24,
+      atk: 4, def: 8, range: 0, speed: 1.55, siege: 24,
       desc: '城門を打ち破る破城槌。攻城戦で城壁の守りを崩す。' },
     { id: 'ladder', name: '雲梯', era: 3, men: 10,
       cost: { wood: 35, coin: 24 }, upkeep: 0.2,
-      atk: 3, def: 6, range: 0, speed: 1.3, siege: 16,
+      atk: 3, def: 6, range: 0, speed: 1.65, siege: 16,
       desc: '城壁に掛ける長梯子。攻城戦で城壁の守りを崩す。' }
   ];
   H.UNIT_MAP = {};

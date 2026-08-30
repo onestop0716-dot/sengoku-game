@@ -10,6 +10,9 @@
 
   var FW = 60, FD = 32;          // 戦場の広さ (ワールド単位)
   var MELEE = 2.0;               // 白兵の間合い
+  var WALL_STAND = 1.15;         // 城壁の手前で足を止める距離
+  var ASSAULT_RATE = 0.22;       // 力攻めで城壁を削る速さ (攻撃力あたり)
+  var ASSAULT_LOSS = 0.42;       // 力攻め中に城壁の上から受ける損害 (人/秒)
 
   /* 陣営色 */
   var SIDE_ACCENT = [0xc23c2a, 0x2a4ac2];
@@ -465,14 +468,11 @@
     var sp = u.def.speed * this._speedMul(u) * (spMul || 1) * dt;
     var nx = u.pos.x + dx / d * Math.min(sp, d);
     var nz = u.pos.z + dz / d * Math.min(sp, d);
-    /* 攻城戦: 城壁は破られるまで越えられない (門は雲梯・衝車と破壊後のみ) */
-    if (this.opts.siege && !this.breached && u.side === 0 && !u.def.siege) {
-      if (u.pos.x < this.wallX - 0.8 && nx > this.wallX - 0.8 && Math.abs(nz) > this.gateHalf) {
-        nx = this.wallX - 0.8;
-      }
-      if (u.pos.x < this.wallX - 0.8 && nx > this.wallX - 0.8 && Math.abs(nz) <= this.gateHalf) {
-        nx = this.wallX - 0.8;   // 門も閉じている
-      }
+    /* 攻城戦: 城壁は破られるまで越えられない。門も閉ざされている。
+       すり抜けが起きないよう、位置そのものを壁の手前/内側に抑え込む */
+    if (this.opts.siege && !this.breached) {
+      if (u.side === 0) nx = Math.min(nx, this.wallX - WALL_STAND);
+      else nx = Math.max(nx, this.wallX + 0.9);
     }
     u.pos.x = H.clamp(nx, -FW / 2 + 1, FW / 2 - 1);
     u.pos.z = H.clamp(nz, -FD / 2 + 1, FD / 2 - 1);
@@ -510,8 +510,34 @@
         if (u.pos.x < this.wallX - 1.6) {
           this._moveToward(u, this.wallX - 1.2, wz, dt);
         } else {
+          u.face = Math.PI / 2;
           this.wallHp -= u.def.siege * (u.men / u.maxMen) * dt * 0.55;
           if (this.wallHp <= 0) this._breach();
+        }
+        continue;
+      }
+
+      /* 味方の部隊: 城壁が立ちはだかっている間は、壁の手前まで進んで
+         射てる者は射ち、白兵の者は壁に取り付いて力攻めする */
+      if (this.opts.siege && !this.breached && u.side === 0 && !u.def.siege) {
+        var nearS = this._nearestEnemy(u);
+        /* 射程が届くなら壁ごしに射かける */
+        if (u.def.range > 0 && nearS && nearS.dist <= u.def.range) {
+          u.face = Math.atan2(nearS.unit.pos.x - u.pos.x, nearS.unit.pos.z - u.pos.z);
+          this._fight(u, nearS.unit, dt, true);
+          continue;
+        }
+        /* 命じられた移動が壁の手前なら、そちらを優先する */
+        if (u.order && u.order.mode === 'move' && u.order.x < this.wallX - WALL_STAND - 0.3) {
+          this._moveToward(u, u.order.x, u.order.z, dt);
+          if (Math.hypot(u.order.x - u.pos.x, u.order.z - u.pos.z) < 0.6) u.order = null;
+          continue;
+        }
+        var az = H.clamp(u.pos.z, -FD / 2 + 2, FD / 2 - 2);
+        if (u.pos.x < this.wallX - WALL_STAND - 0.25) {
+          this._moveToward(u, this.wallX - WALL_STAND, az, dt);
+        } else {
+          this._assaultWall(u, dt);
         }
         continue;
       }
@@ -606,6 +632,24 @@
     }
   };
 
+  /* 城壁への力攻め — 壁を削るかわりに、上から矢を浴びて損害が出る */
+  Battle.prototype._assaultWall = function (u, dt) {
+    u.face = Math.PI / 2;                                  // 壁のほうを向く
+    var ratio = u.men / u.maxMen;
+    this.wallHp -= u.def.atk * ratio * ASSAULT_RATE * dt * this.pfx.atk;
+    if (!this._assaultSaid) {
+      this._assaultSaid = true;
+      H.UI.battleMsg('城壁に取り付いた! 力攻めで壁を崩している — 衝車や雲梯があれば速い');
+    }
+    /* 城壁の守りが堅いほど、寄せ手の損害は大きい */
+    var harm = ASSAULT_LOSS * (0.6 + (this.opts.enemyPower || 40) / 110) * dt;
+    u.men -= harm;
+    u.morale -= harm / u.maxMen * 90;
+    if (this.wallHp <= 0) { this.wallHp = 0; this._breach(); }
+    if (u.men <= 1.5) { u.men = 0; u.state = 'gone'; this._shout(u, true); }
+    else if (u.morale <= 22 && u.state === 'ok') { u.state = 'rout'; this._shout(u, false); }
+  };
+
   Battle.prototype._shout = function (u, dead) {
     var name = H.UNIT_MAP[u.type].name;
     var side = u.side === 0 ? '我が軍の' : '敵の';
@@ -618,6 +662,7 @@
   };
 
   Battle.prototype._breach = function () {
+    if (this.breached) return;
     this.breached = true;
     this.wallHp = 0;
     H.UI.battleMsg('城壁が破られた! 全軍、突入せよ!');
