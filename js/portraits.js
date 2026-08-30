@@ -9,10 +9,10 @@
   /* ---------- 肌・髪・布の色 ---------- */
   /* 肌は5階調 — hi:照り lt:明部 md:中間 sh:陰 dp:落ち影 */
   var SKIN = {
-    pale: { hi: '#fdeada', lt: '#f2d7ba', md: '#dcb695', sh: '#b1855f', dp: '#845c3e' },
-    warm: { hi: '#f8e0c2', lt: '#eac8a3', md: '#d2a67c', sh: '#a3764c', dp: '#754f30' },
-    tan:  { hi: '#efcda4', lt: '#dcb083', md: '#bf8d5c', sh: '#8f5f37', dp: '#653f23' },
-    dark: { hi: '#dcb17f', lt: '#c69163', md: '#a77340', sh: '#764a25', dp: '#4f2f16' }
+    pale: { hi: '#fbebdf', lt: '#eedbc8', md: '#d9bda6', sh: '#a68d78', dp: '#6f5d4d' },
+    warm: { hi: '#f6e3cd', lt: '#e5cdb3', md: '#cbad91', sh: '#977f66', dp: '#635244' },
+    tan:  { hi: '#eed2b4', lt: '#d9b899', md: '#bd9877', sh: '#8a6b50', dp: '#57422f' },
+    dark: { hi: '#d7b797', lt: '#bf9b78', md: '#a17d5c', sh: '#71553c', dp: '#453224' }
   };
   var HAIR = {
     black: { d: '#171310', m: '#2a221b', l: '#453a2e' },
@@ -149,6 +149,22 @@
   function shade(c, t) { return lerpHex(c, '#000000', t); }
   function tint(c, t) { return lerpHex(c, '#ffffff', t); }
 
+  /* 砂目のタイル — 肌のきめと絵肌に使う。1枚だけ作って使い回す */
+  var _grain = null;
+  function grainTile() {
+    if (_grain) return _grain;
+    var n = document.createElement('canvas'); n.width = n.height = 128;
+    var nc = n.getContext('2d');
+    var img = nc.createImageData(128, 128), d = img.data, sd = 987654321;
+    for (var i = 0; i < 128 * 128; i++) {
+      sd = (sd * 1103515245 + 12345) & 0x7fffffff;
+      var v = 128 + ((sd >> 15) % 22) - 11;
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+    }
+    nc.putImageData(img, 0, 0);
+    _grain = n; return _grain;
+  }
+
   /* ============================================================
      肖像を1枚描く
      光は左上から。面ごとに明暗を置いて立体を作る
@@ -199,16 +215,18 @@
     var yShou  = H2 * 0.735;                 // 肩の線
 
     /* 顔の輪郭 (頭蓋 → こめかみ → 頬骨 → えら → あご) */
+    var asR = 1 + jit(11, 0.05), asJ = 1 + jit(12, 0.06);
     function facePath(sp) {
       sp = sp || 0;
       var w = fw + sp, hTop = yTop - sp, hChin = yChin + sp;
       var jx = w * (0.62 + jawW * 0.42), cw = w * (0.30 + chinW * 0.34);
+      var wR = w * asR, jR = jx * asJ;
       g.beginPath();
       g.moveTo(cx + tn, hTop);
-      g.bezierCurveTo(cx + tn + w * 0.86, hTop + fh * 0.04, cx + tn + w * 1.00, cy - fh * 0.52,
-                      cx + tn + w * 0.99, cy - fh * 0.02);
-      g.bezierCurveTo(cx + tn + w * 0.98, cy + fh * 0.26, cx + tn + jx, yJaw - fh * 0.06, cx + tn + jx * 0.94, yJaw + fh * 0.12);
-      g.bezierCurveTo(cx + tn + jx * 0.78, yChin - fh * 0.12, cx + tn + cw, hChin - fh * 0.03, cx + tn * 0.6, hChin);
+      g.bezierCurveTo(cx + tn + wR * 0.86, hTop + fh * 0.04, cx + tn + wR * 1.00, cy - fh * 0.50,
+                      cx + tn + wR * 0.99, cy - fh * 0.02);
+      g.bezierCurveTo(cx + tn + wR * 0.98, cy + fh * 0.26, cx + tn + jR, yJaw - fh * 0.06, cx + tn + jR * 0.94, yJaw + fh * 0.12);
+      g.bezierCurveTo(cx + tn + jR * 0.78, yChin - fh * 0.12, cx + tn + cw, hChin - fh * 0.03, cx + tn * 0.6, hChin);
       g.bezierCurveTo(cx - tn * 0.2 - cw, hChin - fh * 0.03, cx - tn - jx * 0.78, yChin - fh * 0.12, cx - tn - jx * 0.94, yJaw + fh * 0.12);
       g.bezierCurveTo(cx - tn - jx, yJaw - fh * 0.06, cx - tn - w * 0.98, cy + fh * 0.26, cx - tn - w * 0.99, cy - fh * 0.02);
       g.bezierCurveTo(cx - tn - w * 1.00, cy - fh * 0.52, cx - tn - w * 0.86, hTop + fh * 0.04, cx + tn, hTop);
@@ -222,11 +240,24 @@
     bgg.addColorStop(0.55, lerpHex(bg0, '#4c453a', 0.3));
     bgg.addColorStop(1, shade(bg0, 0.45));
     g.fillStyle = bgg; g.fillRect(0, 0, W, H2);
-    /* 帳の縦じま */
-    g.save(); g.globalAlpha = 0.055;
+    /* 帳の縦じま (かすれさせる) */
+    g.save(); g.globalAlpha = 0.035; g.filter = bl(1.2);
     for (var bi = 0; bi < 13; bi++) {
       g.fillStyle = bi % 2 ? '#000' : '#fff';
       g.fillRect(W * (bi / 13), 0, W / 13 * 0.55, H2);
+    }
+    g.restore();
+    /* 塗りむら */
+    g.save(); g.filter = bl(9);
+    for (var mi2 = 0; mi2 < 16; mi2++) {
+      var mh = (Math.sin(mi2 * 12.9898) * 43758.5453) % 1;
+      var mh2 = (Math.sin(mi2 * 78.233) * 43758.5453) % 1;
+      g.globalAlpha = 0.05 + Math.abs(mh) * 0.05;
+      g.fillStyle = mi2 % 2 ? '#f0dcb4' : '#1c1710';
+      g.beginPath();
+      g.ellipse(W * (0.5 + mh * 0.6), H2 * (0.5 + mh2 * 0.6),
+                W * (0.12 + Math.abs(mh2) * 0.2), H2 * (0.1 + Math.abs(mh) * 0.16), mh * 3, 0, 6.3);
+      g.fill();
     }
     g.restore();
 
@@ -427,19 +458,19 @@
 
     /* --- 面の陰影 --- */
     /* 右半分の陰 */
-    soft(16, 0.62, sk.sh, function () {
+    soft(13, 0.8, sk.sh, function () {
       g.moveTo(cx + tn + fw * 0.18, yTop - fh * 0.2);
       g.bezierCurveTo(cx + tn + fw * 0.6, cy - fh * 0.4, cx + tn + fw * 0.5, yJaw, cx + tn + fw * 0.1, yChin + fh * 0.2);
       g.lineTo(cx + fw * 2, yChin + fh * 0.4); g.lineTo(cx + fw * 2, yTop - fh * 0.4);
     });
     /* こめかみのくぼみ */
     [-1, 1].forEach(function (d) {
-      soft(10, d < 0 ? 0.3 : 0.42, sk.sh, function () {
+      soft(8, d < 0 ? 0.38 : 0.55, sk.sh, function () {
         g.ellipse(cx + tn + d * fw * 0.86, cy - fh * 0.52, fw * 0.3, fh * 0.32, 0, 0, 6.3);
       });
     });
     /* ひたいの照り */
-    soft(13, 0.5, sk.hi, function () {
+    soft(13, 0.62, tint(sk.hi, 0.35), function () {
       g.ellipse(cx + tn - fw * 0.28, yBrow - fh * 0.44, fw * 0.52, fh * 0.30, -0.2, 0, 6.3);
     });
     /* 眉弓 (眉の上のふくらみ) */
@@ -459,31 +490,69 @@
     });
     /* 頬骨の明り */
     [-1, 1].forEach(function (d) {
-      soft(12, d < 0 ? 0.46 : 0.16, sk.hi, function () {
+      soft(12, d < 0 ? 0.55 : 0.16, tint(sk.hi, 0.25), function () {
         g.ellipse(cx + tn + d * fw * 0.60, cy + fh * 0.16, fw * 0.34, fh * 0.24, d * 0.3, 0, 6.3);
       });
     });
     /* 頬のくぼみ */
     [-1, 1].forEach(function (d) {
-      soft(12, 0.3 + (1 - jawW) * 0.2, sk.sh, function () {
+      soft(10, 0.4 + (1 - jawW) * 0.22, sk.sh, function () {
         g.ellipse(cx + tn + d * fw * 0.66, cy + fh * 0.52, fw * 0.26, fh * 0.34, d * 0.16, 0, 6.3);
       });
     });
     /* あご先の照り */
-    soft(9, 0.34, sk.hi, function () {
+    soft(7, 0.44, tint(sk.hi, 0.2), function () {
       g.ellipse(cx + tn - fw * 0.06, yChin - fh * 0.16, fw * 0.24, fh * 0.13, 0, 0, 6.3);
     });
+    /* 面の底を沈める */
+    soft(18, 0.28, shade(sk.dp, 0.45), function () {
+      g.ellipse(cx + tn, yChin + fh * 0.1, fw * 1.1, fh * 0.5, 0, 0, 6.3);
+    });
     /* あご下の返し */
-    soft(9, 0.5, sk.dp, function () {
+    soft(9, 0.55, shade(sk.dp, 0.2), function () {
       g.ellipse(cx + tn, yChin - fh * 0.01, fw * (0.32 + chinW * 0.3), fh * 0.1, 0, 0, 6.3);
     });
     /* 血色 */
     [-1, 1].forEach(function (d) {
-      soft(14, 0.16, '#c1614a', function () {
+      soft(14, 0.11, '#b06853', function () {
         g.ellipse(cx + tn + d * fw * 0.56, cy + fh * 0.20, fw * 0.32, fh * 0.22, 0, 0, 6.3);
       });
     });
-    soft(10, 0.12, '#b8574a', function () { g.ellipse(cx + tn, yNose - fh * 0.06, fw * 0.2, fh * 0.16, 0, 0, 6.3); });
+    soft(10, 0.08, '#ac6355', function () { g.ellipse(cx + tn, yNose - fh * 0.06, fw * 0.2, fh * 0.16, 0, 0, 6.3); });
+
+    /* --- 肌の色域 (額は黄み、中面は赤み、あごは寒色) --- */
+    g.save();
+    soft(22, 0.10, '#cbb185', function () {
+      g.ellipse(cx + tn, yBrow - fh * 0.45, fw * 1.1, fh * 0.52, 0, 0, 6.3);
+    });
+    soft(22, 0.09, '#b57f6e', function () {
+      g.ellipse(cx + tn, yNose - fh * 0.06, fw * 1.05, fh * 0.5, 0, 0, 6.3);
+    });
+    soft(22, 0.07, '#7c8a86', function () {
+      g.ellipse(cx + tn, yChin - fh * 0.12, fw * 0.9, fh * 0.42, 0, 0, 6.3);
+    });
+    g.restore();
+    /* 陰の側の際を暖かく透かす (皮膚を通る光) */
+    softLine(8, 0.22, '#bb7050', 5, function () {
+      g.moveTo(cx + tn + fw * 0.98, cy - fh * 0.3);
+      g.bezierCurveTo(cx + tn + fw * 1.0, cy + fh * 0.3, cx + tn + fw * 0.72, yJaw + fh * 0.2,
+                      cx + tn + fw * 0.2, yChin - fh * 0.02);
+    });
+    /* 肌のきめ */
+    g.save();
+    g.globalCompositeOperation = 'soft-light'; g.globalAlpha = 0.22;
+    var gp = g.createPattern(grainTile(), 'repeat');
+    g.fillStyle = gp; g.fillRect(cx - fw * 1.4, yTop - fh * 0.4, fw * 2.8, (yChin - yTop) + fh * 0.8);
+    g.restore();
+    /* 大きめのむら (血色の斑) */
+    for (var mi3 = 0; mi3 < 9; mi3++) {
+      var r1 = (Math.sin(mi3 * 91.7 + hsh) * 43758.5) % 1;
+      var r2 = (Math.sin(mi3 * 27.3 + hsh) * 43758.5) % 1;
+      soft(10, 0.045, mi3 % 2 ? '#a8604f' : '#b8a078', function () {
+        g.ellipse(cx + tn + r1 * fw * 0.85, cy + r2 * fh * 0.85,
+                  fw * (0.1 + Math.abs(r2) * 0.2), fh * (0.08 + Math.abs(r1) * 0.16), 0, 0, 6.3);
+      });
+    }
 
     /* --- 年齢のしわ --- */
     if (age > 0.3) {
@@ -527,9 +596,140 @@
     }
     g.restore();
 
-    /* 顔の際を締める */
-    g.save(); g.strokeStyle = rgba(shade(sk.dp, 0.35), 0.5); g.lineWidth = 1.1 * S;
-    facePath(); g.stroke(); g.restore();
+    /* 顔の際 — 光の側は締め、陰の側はぼかして溶かす */
+    g.save();
+    g.beginPath(); g.rect(0, 0, cx + tn, H2); g.clip();
+    g.strokeStyle = rgba(shade(sk.dp, 0.4), 0.55); g.lineWidth = 1.2 * S;
+    facePath(); g.stroke();
+    g.restore();
+    g.save();
+    g.beginPath(); g.rect(cx + tn, 0, W, H2); g.clip();
+    g.filter = bl(1.8);
+    g.strokeStyle = rgba(shade(sk.dp, 0.3), 0.32); g.lineWidth = 2.2 * S;
+    facePath(); g.stroke();
+    g.restore();
+
+    /* ================= 目 ================= */
+    var eOpen = p.eye[0], eAng = p.eye[1], iris = p.eye[2], eNarrow = p.eye[3];
+    var eSpread = 0.42 + jit(4, 0.035);
+    var ew0 = fw * (0.335 + jit(5, 0.022)), eh0 = fh * 0.104 * eOpen * (1 - eNarrow * 0.45);
+    [-1, 1].forEach(function (d) {
+      /* 左右をわずかに違える (完全な対称は作り物に見える) */
+      var ew = ew0 * (d < 0 ? 1 : 1 + jit(7, 0.06));
+      var eh = eh0 * (d < 0 ? 1 : 1 + jit(8, 0.07));
+      var ex = cx + tn + d * fw * (eSpread + (d > 0 ? jit(7, 0.012) : 0));
+      var ey = yEye + (d > 0 ? jit(8, 0.02) * fh : 0);
+      var inX = ex - d * ew, outX = ex + d * ew;
+      var inY = ey + eAng * fh * 0.16, outY = ey - eAng * fh * 0.16;
+      var pk = ex - d * ew * 0.18;              // 上まぶたの山 (目頭寄り)
+
+      /* 眼窩の落ち影 */
+      soft(7, 0.5, shade(sk.dp, 0.18), function () {
+        g.ellipse(ex, ey - eh * 0.6, ew * 1.3, eh * 2.6, d * 0.06, 0, 6.3);
+      });
+
+      /* 目のあき */
+      function eyePath() {
+        g.beginPath();
+        g.moveTo(inX, inY);
+        g.bezierCurveTo(inX + d * ew * 0.3, ey - eh * 1.6, pk + d * ew * 0.3, ey - eh * 1.7, outX, outY);
+        g.bezierCurveTo(ex + d * ew * 0.35, ey + eh * 1.15, ex - d * ew * 0.5, ey + eh * 1.15, inX, inY);
+        g.closePath();
+      }
+      /* 白目 — 球体なので上下が落ちる */
+      var sg = g.createLinearGradient(0, ey - eh * 1.4, 0, ey + eh * 1.2);
+      sg.addColorStop(0, '#82796a'); sg.addColorStop(0.38, '#e0d6c3');
+      sg.addColorStop(0.78, '#c4baa6'); sg.addColorStop(1, '#a79d8a');
+      g.fillStyle = sg; eyePath(); g.fill();
+
+      g.save(); eyePath(); g.clip();
+      /* 目頭・目尻を落とす */
+      soft(3, 0.55, '#63584a', function () { g.ellipse(inX, inY, ew * 0.32, eh * 1.5, 0, 0, 6.3); });
+      soft(3, 0.45, '#63584a', function () { g.ellipse(outX, outY, ew * 0.26, eh * 1.4, 0, 0, 6.3); });
+      /* 虹彩 */
+      var ir = eh * 1.42, ix = ex + d * fw * 0.012, iy = ey - eh * 0.02;
+      var ig = g.createRadialGradient(ix - ir * 0.32, iy - ir * 0.36, ir * 0.08, ix, iy, ir);
+      ig.addColorStop(0, tint(iris, 0.55)); ig.addColorStop(0.45, iris);
+      ig.addColorStop(0.82, shade(iris, 0.42)); ig.addColorStop(1, shade(iris, 0.8));
+      g.fillStyle = ig; g.beginPath(); g.arc(ix, iy, ir, 0, 6.3); g.fill();
+      g.save(); g.globalAlpha = 0.34; g.strokeStyle = tint(iris, 0.6); g.lineWidth = 0.7 * S;
+      for (var ri = 0; ri < 14; ri++) {
+        var an = ri / 14 * 6.283 + (ri % 2) * 0.2;
+        g.beginPath();
+        g.moveTo(ix + Math.cos(an) * ir * 0.34, iy + Math.sin(an) * ir * 0.34);
+        g.lineTo(ix + Math.cos(an) * ir * 0.92, iy + Math.sin(an) * ir * 0.92);
+        g.stroke();
+      }
+      g.restore();
+      /* 虹彩の外輪 (これがあると目に芯が入る) */
+      g.strokeStyle = rgba(shade(iris, 0.75), 0.75); g.lineWidth = ir * 0.14;
+      g.beginPath(); g.arc(ix, iy, ir * 0.94, 0, 6.3); g.stroke();
+      /* 瞳 */
+      g.fillStyle = '#0d0a07'; g.beginPath(); g.arc(ix, iy, ir * 0.44, 0, 6.3); g.fill();
+      /* 上まぶたが眼球に落とす影 */
+      soft(3, 0.66, '#3a2e22', function () {
+        g.ellipse(ex, ey - eh * 1.5, ew * 1.15, eh * 1.15, 0, 0, 6.3);
+      });
+      /* 下まぶたの照り返し */
+      soft(2.5, 0.3, '#e8dcc4', function () {
+        g.ellipse(ex, ey + eh * 1.15, ew * 0.7, eh * 0.35, 0, 0, 6.3);
+      });
+      /* 光 */
+      g.fillStyle = 'rgba(255,255,255,.95)';
+      g.beginPath(); g.arc(ix - ir * 0.36, iy - ir * 0.4, ir * 0.19, 0, 6.3); g.fill();
+      g.fillStyle = 'rgba(255,250,235,.3)';
+      g.beginPath(); g.arc(ix + ir * 0.28, iy + ir * 0.36, ir * 0.12, 0, 6.3); g.fill();
+      g.restore();
+
+      /* 上まぶたの縁 — 面として描く (外側1/3をいちばん厚く) */
+      var lt0 = eh * 0.34, lt1 = eh * 0.80;
+      g.fillStyle = '#181109';
+      g.beginPath();
+      g.moveTo(inX, inY);
+      g.bezierCurveTo(inX + d * ew * 0.3, ey - eh * 1.6, pk + d * ew * 0.3, ey - eh * 1.7, outX, outY);
+      g.bezierCurveTo(ex + d * ew * 0.36, ey - eh * 1.7 - lt1, inX + d * ew * 0.34, ey - eh * 1.5 - lt0, inX, inY - lt0 * 0.3);
+      g.closePath(); g.fill();
+      /* 下まぶたの縁 (細い) */
+      g.save(); g.globalAlpha = 0.6; g.strokeStyle = '#2a2016'; g.lineWidth = eh * 0.2; g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(inX, inY);
+      g.bezierCurveTo(ex + d * ew * 0.35, ey + eh * 1.15, ex - d * ew * 0.5, ey + eh * 1.15, inX, inY);
+      g.stroke(); g.restore();
+      /* 目尻を締める (線を伸ばさず、影で終わらせる) */
+      soft(1.6, 0.5, shade(sk.dp, 0.3), function () {
+        g.ellipse(outX + d * ew * 0.03, outY - eh * 0.1, ew * 0.1, eh * 0.5, 0, 0, 6.3);
+      });
+
+      /* まぶたの面 (皮膚) と二重のくぼみ */
+      soft(3.5, 0.32, sk.sh, function () {
+        g.moveTo(inX, inY - eh * 1.2);
+        g.bezierCurveTo(inX + d * ew * 0.3, ey - eh * 2.5, pk + d * ew * 0.3, ey - eh * 2.6, outX + d * ew * 0.05, outY - eh * 1.3);
+        g.bezierCurveTo(ex + d * ew * 0.3, ey - eh * 1.9, inX + d * ew * 0.3, ey - eh * 1.8, inX, inY - eh * 1.2);
+      });
+      softLine(1.4, 0.5 - eNarrow * 0.2, shade(sk.dp, 0.1), 1.3, function () {
+        g.moveTo(inX + d * ew * 0.12, inY - eh * 1.9);
+        g.bezierCurveTo(inX + d * ew * 0.4, ey - eh * 2.7, pk + d * ew * 0.4, ey - eh * 2.7, outX + d * ew * 0.06, outY - eh * 1.4);
+      });
+      /* まぶたの照り */
+      soft(3, 0.26, sk.hi, function () {
+        g.ellipse(ex - d * ew * 0.1, ey - eh * 2.0, ew * 0.5, eh * 0.4, 0, 0, 6.3);
+      });
+      /* 下まぶたの縁の落ち影 */
+      softLine(2.2, 0.34, shade(sk.dp, 0.2), 1.8, function () {
+        g.moveTo(inX + d * ew * 0.12, inY + eh * 0.9);
+        g.bezierCurveTo(ex + d * ew * 0.3, ey + eh * 2.0, ex - d * ew * 0.45, ey + eh * 2.0, inX + d * ew * 0.12, inY + eh * 0.9);
+      });
+      /* 涙袋 */
+      softLine(2, 0.34, sk.hi, 1.8, function () {
+        g.moveTo(inX + d * ew * 0.2, inY + eh * 1.7);
+        g.quadraticCurveTo(ex, ey + eh * 2.4, outX - d * ew * 0.16, outY + eh * 1.6);
+      });
+      softLine(2.6, 0.36, sk.sh, 2.2, function () {
+        g.moveTo(inX + d * ew * 0.22, inY + eh * 3.0);
+        g.quadraticCurveTo(ex, ey + eh * 3.6, outX - d * ew * 0.18, outY + eh * 2.8);
+      });
+      /* (まつ毛は縁の厚みで表す — 線で描くと熊手に見える) */
+    });
 
     /* ================= 眉 ================= */
     var bt = p.brow[0], ba = p.brow[1], barch = p.brow[2];
@@ -537,27 +737,35 @@
       var bx = cx + tn + d * fw * eSpread, by = yBrow;
       var inX = bx - d * fw * 0.30, outX = bx + d * fw * 0.34;
       var inY = by + ba * fh * 0.5, outY = by - ba * fh * 0.22;
-      var th = fh * 0.085 * bt;
+      var th = fh * 0.105 * bt * (d < 0 ? 1 : 1 + jit(10, 0.10));
       var bc = age > 0.6 ? lerpHex(hc.m, '#a49a8c', (age - 0.6) * 1.6) : hc.d;
-      g.save();
-      g.fillStyle = bc;
-      g.beginPath();
-      g.moveTo(inX, inY + th * 0.5);
-      g.quadraticCurveTo(bx, by - fh * 0.12 * barch, outX, outY);
-      g.quadraticCurveTo(bx, by - fh * 0.12 * barch + th * 1.5, inX, inY - th * 0.5);
-      g.closePath(); g.fill();
-      g.restore();
-      /* 毛の流れ */
-      g.save(); g.globalAlpha = 0.5; g.strokeStyle = tint(bc, 0.3); g.lineWidth = 0.8 * S; g.lineCap = 'round';
-      for (var hi2 = 0; hi2 < 9; hi2++) {
-        var t = hi2 / 8;
+      function browPath() {
+        g.beginPath();
+        g.moveTo(inX - d * fw * 0.02, inY + th * 0.55);
+        g.quadraticCurveTo(bx, by - fh * 0.12 * barch, outX, outY);
+        g.quadraticCurveTo(bx, by - fh * 0.12 * barch + th * 1.6, inX - d * fw * 0.02, inY - th * 0.45);
+        g.closePath();
+      }
+      g.save(); g.fillStyle = bc; browPath(); g.fill(); g.restore();
+      /* 毛の流れ (眉のかたちの中だけに描く) */
+      g.save(); browPath(); g.clip();
+      g.globalAlpha = 0.3; g.lineWidth = 0.9 * S; g.lineCap = 'round';
+      for (var hi2 = 0; hi2 < 16; hi2++) {
+        var t = hi2 / 15;
         var px1 = inX + (outX - inX) * t;
         var py1 = inY + (outY - inY) * t - Math.sin(t * 3.14) * fh * 0.09 * barch;
+        g.strokeStyle = hi2 % 3 ? tint(bc, 0.16) : shade(bc, 0.22);
         g.beginPath();
-        g.moveTo(px1, py1 + th * 0.4);
-        g.lineTo(px1 + d * fw * 0.05, py1 - th * 0.5);
+        g.moveTo(px1 - d * fw * 0.03, py1 + th * 0.8);
+        g.quadraticCurveTo(px1, py1, px1 + d * fw * 0.05, py1 - th * 0.9);
         g.stroke();
       }
+      g.restore();
+      /* 眉の縁をぼかす (切り抜きに見せない) */
+      g.save(); g.filter = bl(3.2); g.globalAlpha = 0.5; g.fillStyle = bc;
+      browPath(); g.fill();
+      g.beginPath(); g.ellipse(inX, inY, fw * 0.055, th * 0.75, 0, 0, 6.3); g.fill();
+      g.beginPath(); g.ellipse(outX, outY, fw * 0.05, th * 0.55, 0, 0, 6.3); g.fill();
       g.restore();
       /* 眉の下の影 */
       softLine(3, 0.3, sk.dp, 2.2, function () {
@@ -566,99 +774,9 @@
       });
     });
 
-    /* ================= 目 ================= */
-    var eOpen = p.eye[0], eAng = p.eye[1], iris = p.eye[2], eNarrow = p.eye[3];
-    var eSpread = 0.42 + jit(4, 0.035);
-    var ew = fw * (0.325 + jit(5, 0.022)), eh = fh * 0.115 * eOpen * (1 - eNarrow * 0.45);
-    [-1, 1].forEach(function (d) {
-      var ex = cx + tn + d * fw * eSpread, ey = yEye;
-      var inX = ex - d * ew, outX = ex + d * ew;
-      var inY = ey + eAng * fh * 0.16, outY = ey - eAng * fh * 0.16;
-      function eyePath() {
-        g.beginPath();
-        g.moveTo(inX, inY);
-        g.bezierCurveTo(ex - d * ew * 0.4, ey - eh * 1.5, ex + d * ew * 0.45, ey - eh * 1.35, outX, outY);
-        g.bezierCurveTo(ex + d * ew * 0.4, ey + eh * 1.25, ex - d * ew * 0.45, ey + eh * 1.2, inX, inY);
-        g.closePath();
-      }
-      /* 白目 */
-      var sg = g.createLinearGradient(0, ey - eh, 0, ey + eh);
-      sg.addColorStop(0, '#9b9384');
-      sg.addColorStop(0.45, '#efe9dd'); sg.addColorStop(1, '#c9c0b1');
-      g.fillStyle = sg; eyePath(); g.fill();
-
-      g.save(); eyePath(); g.clip();
-      /* 虹彩 */
-      var ir = eh * 1.32, ix = ex + d * fw * 0.015, iy = ey + eh * 0.05;
-      var ig = g.createRadialGradient(ix - ir * 0.3, iy - ir * 0.35, ir * 0.1, ix, iy, ir);
-      ig.addColorStop(0, tint(iris, 0.5)); ig.addColorStop(0.5, iris);
-      ig.addColorStop(0.88, shade(iris, 0.4)); ig.addColorStop(1, shade(iris, 0.72));
-      g.fillStyle = ig; g.beginPath(); g.arc(ix, iy, ir, 0, 6.3); g.fill();
-      /* 虹彩の筋 */
-      g.save(); g.globalAlpha = 0.3; g.strokeStyle = tint(iris, 0.55); g.lineWidth = 0.6 * S;
-      for (var ri = 0; ri < 10; ri++) {
-        var an = ri / 10 * 6.283;
-        g.beginPath();
-        g.moveTo(ix + Math.cos(an) * ir * 0.3, iy + Math.sin(an) * ir * 0.3);
-        g.lineTo(ix + Math.cos(an) * ir * 0.9, iy + Math.sin(an) * ir * 0.9);
-        g.stroke();
-      }
-      g.restore();
-      /* 瞳 */
-      g.fillStyle = '#120d09'; g.beginPath(); g.arc(ix, iy, ir * 0.46, 0, 6.3); g.fill();
-      /* 上まぶたが落とす影 */
-      soft(3, 0.6, '#3a2c1e', function () {
-        g.ellipse(ex, ey - eh * 1.15, ew * 1.1, eh * 0.95, 0, 0, 6.3);
-      });
-      /* 光 */
-      g.fillStyle = 'rgba(255,255,255,.92)';
-      g.beginPath(); g.arc(ix - ir * 0.38, iy - ir * 0.42, ir * 0.2, 0, 6.3); g.fill();
-      g.fillStyle = 'rgba(255,255,255,.35)';
-      g.beginPath(); g.arc(ix + ir * 0.3, iy + ir * 0.34, ir * 0.11, 0, 6.3); g.fill();
-      g.restore();
-
-      /* まつ毛の線 (上は太く、目尻へ跳ねる) */
-      g.save();
-      g.strokeStyle = '#1a130d'; g.lineCap = 'round';
-      g.lineWidth = eh * 0.5;
-      g.beginPath();
-      g.moveTo(inX, inY);
-      g.bezierCurveTo(ex - d * ew * 0.4, ey - eh * 1.5, ex + d * ew * 0.45, ey - eh * 1.35, outX, outY);
-      g.stroke();
-      g.lineWidth = eh * 0.22;
-      g.globalAlpha = 0.65;
-      g.beginPath();
-      g.moveTo(inX, inY);
-      g.bezierCurveTo(ex - d * ew * 0.4, ey + eh * 1.2, ex + d * ew * 0.45, ey + eh * 1.25, outX, outY);
-      g.stroke();
-      /* 目尻の跳ね */
-      g.globalAlpha = 1; g.lineWidth = eh * 0.3;
-      g.beginPath();
-      g.moveTo(outX, outY);
-      g.lineTo(outX + d * ew * 0.16, outY - eh * 0.5 - eAng * fh * 0.06);
-      g.stroke();
-      g.restore();
-
-      /* 二重のくぼみ */
-      softLine(1.6, 0.42 - eNarrow * 0.2, sk.dp, 1.3, function () {
-        g.moveTo(inX + d * ew * 0.1, inY - eh * 1.9);
-        g.bezierCurveTo(ex - d * ew * 0.3, ey - eh * 2.9, ex + d * ew * 0.4, ey - eh * 2.5, outX + d * ew * 0.06, outY - eh * 1.5);
-      });
-      /* 下まぶたの明り */
-      softLine(2, 0.4, sk.hi, 1.6, function () {
-        g.moveTo(inX + d * ew * 0.16, inY + eh * 1.5);
-        g.quadraticCurveTo(ex, ey + eh * 2.3, outX - d * ew * 0.12, outY + eh * 1.5);
-      });
-      /* 涙袋の下の影 */
-      softLine(3, 0.3, sk.sh, 2.2, function () {
-        g.moveTo(inX + d * ew * 0.2, inY + eh * 2.7);
-        g.quadraticCurveTo(ex, ey + eh * 3.4, outX - d * ew * 0.16, outY + eh * 2.6);
-      });
-    });
-
     /* ================= 鼻 ================= */
     var nWing = p.nose[0], nLen = p.nose[1];
-    var nx = cx + tn * 1.3, nby = yNose, nw2 = fw * 0.19 * nWing;
+    var nx = cx + tn * 1.3, nby = yNose, nw2 = fw * 0.215 * nWing;
     /* 鼻筋の明り */
     soft(6, 0.5, sk.hi, function () {
       g.moveTo(nx - fw * 0.055, yBrow);
@@ -667,7 +785,7 @@
       g.lineTo(nx - fw * 0.10, nby - fh * 0.08);
     });
     /* 鼻の右側の陰 */
-    soft(7, 0.5, sk.sh, function () {
+    soft(7, 0.62, shade(sk.sh, 0.12), function () {
       g.moveTo(nx + fw * 0.05, yBrow - fh * 0.02);
       g.bezierCurveTo(nx + fw * 0.13, cy, nx + fw * 0.20, nby - fh * 0.2, nx + nw2 * 1.1, nby);
       g.lineTo(nx + fw * 0.05, nby);
@@ -681,19 +799,35 @@
       soft(3.5, 0.55, sk.sh, function () {
         g.ellipse(nx + d * nw2 * 0.88, nby - fh * 0.04, fw * 0.075, fh * 0.075, d * 0.3, 0, 6.3);
       });
-      softLine(1.8, 0.5, sk.dp, 1.5, function () {
+      softLine(1.3, 0.62, shade(sk.dp, 0.15), 1.6, function () {
         g.moveTo(nx + d * nw2 * 0.42, nby - fh * 0.13);
         g.quadraticCurveTo(nx + d * nw2 * 1.16, nby - fh * 0.14, nx + d * nw2 * 0.94, nby + fh * 0.015);
       });
-      /* 鼻孔 */
-      g.save(); g.globalAlpha = 0.72; g.fillStyle = shade(sk.dp, 0.55); g.filter = bl(1.2);
-      g.beginPath();
-      g.ellipse(nx + d * nw2 * 0.5, nby - fh * 0.005, fw * 0.045, fh * 0.032, d * 0.5, 0, 6.3);
-      g.fill(); g.restore();
+      /* 小鼻の照り */
+      soft(2.2, 0.34, sk.hi, function () {
+        g.ellipse(nx + d * nw2 * 0.95, nby - fh * 0.075, fw * 0.038, fh * 0.035, 0, 0, 6.3);
+      });
     });
-    /* 鼻の下の落ち影 */
-    soft(4, 0.42, sk.dp, function () {
-      g.ellipse(nx, nby + fh * 0.045, nw2 * 1.05, fh * 0.05, 0, 0, 6.3);
+    /* 鼻先の下の落ち影 (これがないと鼻が顔に貼りついて見える) */
+    soft(3.5, 0.62, shade(sk.dp, 0.25), function () {
+      g.ellipse(nx, nby + fh * 0.035, nw2 * 1.0, fh * 0.055, 0, 0, 6.3);
+    });
+    soft(7, 0.3, sk.dp, function () {
+      g.ellipse(nx + fw * 0.06, nby + fh * 0.02, nw2 * 1.5, fh * 0.14, 0, 0, 6.3);
+    });
+    /* 鼻先の照り (いちばん手前の面) */
+    g.save(); g.globalAlpha = 0.55; g.filter = bl(1.8); g.fillStyle = tint(sk.hi, 0.5);
+    g.beginPath();
+    g.ellipse(nx - fw * 0.03, nby - fh * 0.115, fw * 0.062, fh * 0.05, -0.2, 0, 6.3);
+    g.fill(); g.restore();
+    /* 鼻孔 — 影のあとに置く (埋もれさせない) */
+    [-1, 1].forEach(function (d) {
+      g.save(); g.globalAlpha = 0.92; g.fillStyle = shade(sk.dp, 0.8); g.filter = bl(0.9);
+      g.beginPath();
+      g.moveTo(nx + d * nw2 * 0.16, nby - fh * 0.028);
+      g.quadraticCurveTo(nx + d * nw2 * 0.64, nby - fh * 0.086, nx + d * nw2 * 0.78, nby - fh * 0.004);
+      g.quadraticCurveTo(nx + d * nw2 * 0.56, nby + fh * 0.028, nx + d * nw2 * 0.16, nby - fh * 0.028);
+      g.closePath(); g.fill(); g.restore();
     });
     /* 人中 */
     softLine(2, 0.3, sk.sh, 1.6, function () {
@@ -704,9 +838,9 @@
     });
 
     /* ================= 口 ================= */
-    var mw = fw * (0.30 + jit(6, 0.03)) * p.mouth[0], mcv = p.mouth[1];
-    var mx = cx + tn, my = yMouth;
-    var lipC = lerpHex(sk.sh, '#a04236', 0.58);
+    var mw = fw * (0.375 + jit(6, 0.03)) * p.mouth[0], mcv = p.mouth[1];
+    var mx = cx + tn + jit(9, 0.018) * fw, my = yMouth;
+    var lipC = lerpHex(sk.sh, '#94584c', 0.46);
     /* 上唇 (陰) */
     g.fillStyle = shade(lipC, 0.25);
     g.beginPath();
@@ -730,9 +864,21 @@
     g.moveTo(mx - mw, my + mcv * fh * 0.10);
     g.bezierCurveTo(mx - mw * 0.4, my + fh * 0.018, mx + mw * 0.4, my + fh * 0.018, mx + mw, my + mcv * fh * 0.10);
     g.stroke(); g.restore();
-    /* 下唇の照りと影 */
-    softLine(2.5, 0.4, '#ffffff', 1.8, function () {
-      g.moveTo(mx - mw * 0.4, my + fh * 0.075); g.quadraticCurveTo(mx - mw * 0.1, my + fh * 0.095, mx + mw * 0.18, my + fh * 0.07);
+    /* 唇の稜 (これがあると口が顔に埋まらない) */
+    softLine(1.2, 0.34, sk.hi, 1.3, function () {
+      g.moveTo(mx - mw * 0.9, my + mcv * fh * 0.09);
+      g.bezierCurveTo(mx - mw * 0.45, my - fh * 0.088, mx - mw * 0.14, my - fh * 0.055, mx, my - fh * 0.03);
+      g.bezierCurveTo(mx + mw * 0.14, my - fh * 0.055, mx + mw * 0.45, my - fh * 0.088, mx + mw * 0.9, my + mcv * fh * 0.09);
+    });
+    /* 口角を落とす */
+    [-1, 1].forEach(function (d) {
+      soft(2.2, 0.55, shade(sk.dp, 0.35), function () {
+        g.ellipse(mx + d * mw * 0.98, my + mcv * fh * 0.10, mw * 0.09, fh * 0.028, 0, 0, 6.3);
+      });
+    });
+    /* 下唇の照り */
+    softLine(2.2, 0.42, '#ffffff', 1.8, function () {
+      g.moveTo(mx - mw * 0.4, my + fh * 0.075); g.quadraticCurveTo(mx - mw * 0.1, my + fh * 0.098, mx + mw * 0.2, my + fh * 0.07);
     });
     soft(4, 0.34, sk.dp, function () {
       g.ellipse(mx, my + fh * 0.20, mw * 0.8, fh * 0.05, 0, 0, 6.3);
@@ -784,6 +930,18 @@
       g.ellipse(cx + tn + fw * 0.95, cy - fh * 0.5, fw * 0.4, fh * 0.7, 0, 0, 6.3);
     });
     g.restore();
+    /* 髪の際を毛でほぐす (硬い切り抜きに見せない) */
+    for (var wz = 0; wz < 34; wz++) {
+      var wt = wz / 33, wa = (wt - 0.5) * 2.7;
+      var wx0 = cx + tn + Math.sin(wa) * fw * 1.0;
+      var wy0 = yTop - fh * 0.28 + Math.abs(Math.sin(wa)) * fh * 0.55;
+      var wj = ((wz * 37 + hsh) % 11) / 10 - 0.5;
+      hair1(wx0, wy0,
+            wx0 + Math.sin(wa) * fw * (0.10 + Math.abs(wj) * 0.14), wy0 - fh * (0.02 + wj * 0.1),
+            wx0 + Math.sin(wa) * fw * 0.08, wy0 - fh * 0.06,
+            0.8, wz % 3 ? hc.m : hc.l, 0.3 + Math.abs(wj) * 0.4);
+    }
+
     /* 生え際の落ち影 */
     soft(6, 0.4, sk.dp, function () {
       g.moveTo(cx + tn - fw * 0.9, yHair - fh * 0.1);
@@ -828,7 +986,7 @@
       var by2 = my + fh * 0.19, bw2 = mw * 1.3 * wide, bl2 = fh * len;
       var bgd = g.createLinearGradient(cx - bw2, by2, cx + bw2, by2 + bl2);
       bgd.addColorStop(0, bc2.m); bgd.addColorStop(0.4, bc2.d); bgd.addColorStop(1, shade(bc2.d, 0.3));
-      g.save(); g.filter = bl(1.6); g.fillStyle = bgd;
+      g.save(); g.filter = bl(3.4); g.globalAlpha = 0.88; g.fillStyle = bgd;
       g.beginPath();
       g.moveTo(mx - bw2, by2);
       g.bezierCurveTo(mx - bw2 * 1.1, by2 + bl2 * 0.45, mx - bw2 * 0.62, by2 + bl2, mx, by2 + bl2);
@@ -837,8 +995,9 @@
       g.closePath(); g.fill(); g.restore();
       for (var bi2 = 0; bi2 < 44; bi2++) {
         var t3 = bi2 / 43, sp = (t3 - 0.5) * 2;
-        var x0 = mx + sp * bw2 * 0.9, x1 = mx + sp * bw2 * 0.5;
-        var y1 = by2 + bl2 * (0.55 + 0.45 * (1 - Math.abs(sp)));
+        var wob = ((bi2 * 53 + hsh) % 13) / 12 - 0.5;   // 毛先をふぞろいに
+        var x0 = mx + sp * bw2 * (0.92 + wob * 0.18), x1 = mx + sp * bw2 * 0.5;
+        var y1 = by2 + bl2 * (0.55 + 0.45 * (1 - Math.abs(sp))) + bl2 * wob * 0.16;
         var li = 1 - Math.min(1, Math.abs(sp + 0.35) * 1.6);
         hair1(x0, by2 + fh * 0.02, x1, y1, mx + sp * bw2 * 0.85, by2 + bl2 * 0.5,
               0.7 + (bi2 % 3) * 0.35, (bi2 % 4 === 0 || li > 0.5) ? bc2.l : bc2.m, 0.24 + li * 0.42);
@@ -1123,21 +1282,35 @@
     vg.addColorStop(1, 'rgba(0,0,0,.55)');
     g.fillStyle = vg; g.fillRect(0, 0, W, H2);
     /* 暖色の色調 */
-    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.16;
+    g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.10;
     var wg2 = g.createLinearGradient(0, 0, W, H2);
-    wg2.addColorStop(0, '#ffd9a0'); wg2.addColorStop(1, '#2a3550');
+    wg2.addColorStop(0, '#f5dcbc'); wg2.addColorStop(1, '#33405c');
     g.fillStyle = wg2; g.fillRect(0, 0, W, H2); g.restore();
-    /* 紙目 */
-    g.save(); g.globalAlpha = 0.05;
-    var seed = 0; for (var ci3 = 0; ci3 < id.length; ci3++) seed = (seed * 31 + id.charCodeAt(ci3)) % 99991;
-    for (var ni = 0; ni < W * H2 / 26; ni++) {
-      seed = (seed * 1103515245 + 12345) % 2147483648;
-      var px2 = (seed / 2147483648) * W;
-      seed = (seed * 1103515245 + 12345) % 2147483648;
-      var py2 = (seed / 2147483648) * H2;
-      g.fillStyle = (ni % 2) ? '#fff' : '#000';
-      g.fillRect(px2, py2, S, S);
+    /* 筆致 — 斜めの掃きを薄く重ねて絵肌にする */
+    g.save();
+    g.globalCompositeOperation = 'soft-light';
+    g.lineCap = 'round'; g.filter = bl(1.6);
+    var bseed = hsh;
+    for (var si3 = 0; si3 < 110; si3++) {
+      bseed = (bseed * 1103515245 + 12345) & 0x7fffffff;
+      var bx2 = (bseed / 2147483648) * W;
+      bseed = (bseed * 1103515245 + 12345) & 0x7fffffff;
+      var by3 = (bseed / 2147483648) * H2;
+      bseed = (bseed * 1103515245 + 12345) & 0x7fffffff;
+      var bk = (bseed / 2147483648);
+      g.globalAlpha = 0.05 + bk * 0.07;
+      g.strokeStyle = si3 % 2 ? '#ffffff' : '#000000';
+      g.lineWidth = (1.2 + bk * 3.4) * S;
+      g.beginPath();
+      g.moveTo(bx2, by3);
+      g.lineTo(bx2 + (12 + bk * 26) * S, by3 - (7 + bk * 15) * S);
+      g.stroke();
     }
+    g.restore();
+    /* 画肌の粒子 */
+    g.save(); g.globalCompositeOperation = 'soft-light'; g.globalAlpha = 0.20;
+    g.fillStyle = g.createPattern(grainTile(), 'repeat');
+    g.fillRect(0, 0, W, H2);
     g.restore();
 
     /* 金の枠 */
